@@ -50,6 +50,8 @@ LINKS = {
     'khazard': 'https://kurage.exbridge.jp/khazard.php/',
     'ktsunami': 'https://kurage.exbridge.jp/ktsunami.php/',
     'krefuge': 'https://kurage.exbridge.jp/krefuge.php/',
+    'buy': 'https://kappstore.exbridge.jp/app.php?id=41a09acc163dcb7d&ref=kflood',
+    'komon': 'https://exbridge.jp/ai-it-komon.html?ref=kflood',
 }
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 templates = Jinja2Templates(directory=os.path.join(ROOT, 'app', 'templates'))

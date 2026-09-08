@@ -71,6 +71,7 @@ function render(j){
   if(j.guidance.length){h+='<h2>行動の目安</h2><ul class="guide">'+j.guidance.map(g=>'<li>'+esc(g)+'</li>').join('')+'</ul>';}
   j.notes.forEach(t=>{h+='<div class="note">'+esc(t)+'</div>'});
   h+='<p class="noprint" style="margin:14px 0 6px"><a class="btn" href="timeline?q='+encodeURIComponent(j.query)+'">この住所でマイ・タイムラインを作る</a> <a class="btn ghost" target="_blank" rel="noopener" href="{{ links.portal }}?ll='+j.lat+','+j.lon+'&z=15&base=pale&ls=flood_l2_shinsuishin_data%2C0.8&disp=1&vs=c1j0l0u0t0h0z0">重ねるハザードマップで地図を見る</a></p>';
+  h+='<div class="noprint" style="margin:6px 0 12px;padding:12px 14px;background:var(--teal-l);border-radius:10px;font-size:14px"><b>この判定を、事務所・自治体・会社の名前で公開できます。</b> ソースコード・取り込みスクリプト・AI設置指示書つきの買い切り版（55,000円 税込）→ <a href="{{ links.buy }}" target="_blank" rel="noopener">Kurage App Store の商品ページ</a>。名古屋市内なら <a href="{{ links.komon }}" target="_blank" rel="noopener">AI-IT顧問契約</a>（キャンペーン中は商品代金無料）で設置まで行います。</div>';
   h+='<div class="src"><b>判定に使ったデータ</b><ul>'+j.datasets.map(d=>'<li>'+esc(d.name)+' — データ時点 '+esc(d.vintage)+(d.note?'（'+esc(d.note)+'）':'')+'</li>').join('')+'</ul>'+esc(j.disclaimer)+'</div></div>';
   document.getElementById('out').innerHTML=h; document.getElementById('out').scrollIntoView({behavior:'smooth',block:'start'});
 }
