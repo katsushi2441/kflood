@@ -27,7 +27,7 @@ from datetime import date, datetime
 import psycopg2
 import requests
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from app.codes import (CATEGORY, COLLAPSE, DEPTH_ACTION, DEPTH_RANK, DURATION_RANK, LONG_DURATION_RANK, RIVER,
@@ -431,6 +431,12 @@ def timeline(request: Request, q: str = '', elderly: int = 0, infant: int = 0, d
     tl = build_timeline(res, hh)
     return page(request, 'timeline.html', res=res, hh=hh, tl=tl,
                                                            depth_rank=DEPTH_RANK, today=date.today().strftime('%Y年%m月%d日'))
+
+
+@app.get('/ogp.png')
+def ogp():
+    return FileResponse(os.path.join(ROOT, 'app', 'static', 'ogp.png'), media_type='image/png',
+                        headers={'Cache-Control': 'public, max-age=86400'})
 
 
 @app.get('/robots.txt', response_class=PlainTextResponse)
