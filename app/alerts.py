@@ -50,10 +50,15 @@ def parse(html_text: str, year: int = None) -> dict:
         issued = _jst_datetime(re.sub(r'<[^>]+>', ' ', title_html), year)
         title = html.unescape(re.sub(r'<span.*?</span>', '', title_html, flags=re.S))
         title = re.sub(r'<[^>]+>', '', title).strip()
+        if '解除' in title:
+            # 「警戒レベル4・避難指示を解除（矢田川）」は正規表現に一致してしまうので、先に除外する
+            # （2026-09-09 実測: 解除通知がレベル4の発令として表示されていた）
+            mt = re.search(r'[（(]([^）)]+)[）)]', title)
+            notes.append(dict(title=title, target=mt.group(1).strip() if mt else None,
+                              issued_at=issued.isoformat() if issued else None, kind='解除'))
+            continue
         m = re.match(r'警戒レベル\s*(\d)\s*[・･]\s*([^（(]+)[（(]([^）)]+)[）)]', title)
         if not m:
-            if '解除' in title:
-                notes.append(dict(title=title, issued_at=issued.isoformat() if issued else None))
             continue
         level = int(m.group(1))
         kind = m.group(2).strip()

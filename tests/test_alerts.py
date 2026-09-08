@@ -42,3 +42,13 @@ def test_for_gakku_and_typo():
 
 def test_unavailable_is_not_none():
     assert alerts.max_level([]) is None
+
+
+def test_kaijo_notice_is_not_an_active_alert():
+    """解除通知（警戒レベル4・避難指示を解除（矢田川））を発令として出さない（2026-09-09 実測の退行）。"""
+    html_text = (FIXTURES / 'nagoya_saigai_20260909_kaijo.html').read_text(encoding='utf-8')
+    d = alerts.parse(html_text, year=2026)
+    assert d['items'] == []
+    kaijo = [n for n in d['notes'] if n.get('kind') == '解除']
+    assert kaijo and kaijo[0]['target'] == '矢田川'
+    assert kaijo[0]['issued_at'] == '2026-09-09T02:45:00'
