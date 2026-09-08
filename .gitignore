@@ -1,0 +1,6 @@
+.venv/
+data/
+.env
+php/kflood_config.php
+__pycache__/
+*.pyc

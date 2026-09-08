@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% set nav = 'home' %}
+{% block body %}
+<h1>住所を入れると、洪水と内水で「何メートル・何日」浸かる想定かが分かります</h1>
+<p class="lead">国の洪水浸水想定区域（想定最大規模・計画規模・浸水継続時間・家屋倒壊等氾濫想定区域）と、名古屋市の内水氾濫ハザードマップを、住所ひとつで同時に照らします。判定にはデータの時点と出典を必ず添えます。</p>
+<div class="panel">
+<form class="search" id="f" onsubmit="return go()">
+<input type="text" id="q" placeholder="例: 愛知県名古屋市中川区富田町大字千音寺" autocomplete="street-address" required>
+<button class="btn" type="submit">判定する</button>
+</form>
+<div class="ex">例:
+<a href="#" onclick="return ex('愛知県名古屋市中川区富田町大字千音寺')">中川区 千音寺</a>
+<a href="#" onclick="return ex('愛知県名古屋市港区港明1丁目')">港区 港明</a>
+<a href="#" onclick="return ex('愛知県名古屋市北区楠1丁目')">北区 楠</a>
+<a href="#" onclick="return ex('愛知県名古屋市千種区星が丘元町')">千種区 星が丘</a>
+<a href="#" onclick="return ex('岐阜県大垣市丸の内2丁目')">大垣市（洪水のみ）</a>
+</div>
+</div>
+<div id="out"></div>
+<div class="panel noprint" id="how">
+<h2 style="margin-top:0">返ってくるもの</h2>
+<div class="steps">
+<div class="step"><b>洪水（河川の氾濫）</b><strong>浸水深と継続時間</strong>想定最大規模・計画規模それぞれの浸水深ランク、水が引くまでの日数、家屋倒壊等氾濫想定区域の区分</div>
+<div class="step"><b>内水（下水道・水路）</b><strong>浸水深と継続時間</strong>河川が氾濫しなくても起きる浸水。自治体のデータで判定（名古屋市版を同梱）</div>
+<div class="step"><b>行動の目安</b><strong>立退きか、上の階か</strong>深さ・継続時間・倒壊区域から、垂直避難で足りるかを示す。世帯条件を足せばマイ・タイムラインに</div>
+<div class="step"><b>データ時点</b><strong>いつのデータで判定したか</strong>時点を確認できないデータでは判定しない。未収録と区域外を区別する</div>
+</div>
+</div>
+{% endblock %}
+{% block js %}
+<script>
+function ex(s){document.getElementById('q').value=s;go();return false}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function lv(rank){return rank>=3?'lv3':rank==2?'lv2':rank==1?'lv1':'none'}
+function go(){
+  var q=document.getElementById('q').value.trim(); if(!q) return false;
+  var out=document.getElementById('out'); out.innerHTML='<div class="panel">判定中…（住所検索と照合に数秒かかります）</div>';
+  fetch('api/check?q='+encodeURIComponent(q)).then(async r=>{var j=await r.json(); if(!r.ok) throw new Error(j.detail||('エラー '+r.status)); return j}).then(render).catch(e=>{out.innerHTML='<div class="panel"><div class="err">'+esc(e.message)+'</div></div>'});
+  try{history.replaceState(null,'','?q='+encodeURIComponent(q))}catch(e){}
+  return false;
+}
+function render(j){
+  var n=j.national, w=j.naisui, h='';
+  h+='<div class="panel"><div class="src">判定に使った住所: <b>'+esc(j.address)+'</b>（'+j.lat.toFixed(5)+', '+j.lon.toFixed(5)+'）'+(j.elevation?' 海抜 <b>'+j.elevation.m+'m</b>':'')+' / '+esc(j.checked_at)+'</div>';
+  h+='<h2 style="margin-top:12px">洪水（河川の氾濫）</h2><div class="grid">';
+  if(n.status==='uncovered'){h+='<div class="card"><div class="k">洪水データ</div><div class="v">未収録</div><div class="s">このメッシュは取り込まれていません（区域外ではありません）</div></div>';}
+  else{
+    h+='<div class="card '+(n.max?lv(n.max.rank):'none')+'"><div class="k">想定最大規模の浸水深</div><div class="v">'+(n.max?esc(n.max.label):'区域外')+'</div><div class="s">'+(n.max?esc(n.max.rivers.join('・')):(n.nearest_m!=null?'最寄りの区域まで約'+n.nearest_m+'m':'1km以内に区域なし'))+'</div></div>';
+    h+='<div class="card '+(n.planned?lv(n.planned.rank):'none')+'"><div class="k">計画規模の浸水深</div><div class="v">'+(n.planned?esc(n.planned.label):'区域外')+'</div><div class="s">河川整備の目標とする規模の降雨</div></div>';
+    h+='<div class="card '+(n.duration?(n.duration.rank>=3?'lv3':'lv2'):'none')+'"><div class="k">浸水継続時間</div><div class="v">'+(n.duration?esc(n.duration.label):'想定なし')+'</div><div class="s">水が引くまでの目安</div></div>';
+    h+='<div class="card '+(n.collapse.length?'lv3':'none')+'"><div class="k">家屋倒壊等氾濫想定区域</div><div class="v">'+(n.collapse.length?esc(n.collapse.map(c=>c.label).join('・')):'該当なし')+'</div><div class="s">'+(n.collapse.length?'建物が壊れるおそれ。立退き避難が必要':'')+'</div></div>';
+  }
+  h+='</div><h2>内水（下水道・水路からの浸水）</h2><div class="grid">';
+  if(w.status==='uncovered'){h+='<div class="card"><div class="k">内水データ</div><div class="v">未収録</div><div class="s">この自治体の内水ハザードマップは収録していません</div></div>';}
+  else{
+    var dr=w.depth_m==null?0:w.depth_m>=3?3:w.depth_m>=0.5?2:1;
+    h+='<div class="card '+(w.status==='inside'?lv(dr):'none')+'"><div class="k">'+esc(w.area)+' 内水 浸水深（想定最大規模）</div><div class="v">'+(w.status==='inside'?esc(w.depth_label)+' <small>('+w.depth_m+'m)</small>':'想定なし')+'</div></div>';
+    h+='<div class="card '+(w.minutes?'lv1':'none')+'"><div class="k">内水 浸水継続時間</div><div class="v">'+(w.minutes_label?esc(w.minutes_label):'想定なし')+'</div></div>';
+  }
+  h+='</div>';
+  if(j.guidance.length){h+='<h2>行動の目安</h2><ul class="guide">'+j.guidance.map(g=>'<li>'+esc(g)+'</li>').join('')+'</ul>';}
+  j.notes.forEach(t=>{h+='<div class="note">'+esc(t)+'</div>'});
+  h+='<p class="noprint" style="margin:14px 0 6px"><a class="btn" href="timeline?q='+encodeURIComponent(j.query)+'">この住所でマイ・タイムラインを作る</a> <a class="btn ghost" target="_blank" rel="noopener" href="{{ links.portal }}?ll='+j.lat+','+j.lon+'&z=15&base=pale&ls=flood_l2_shinsuishin_data%2C0.8&disp=1&vs=c1j0l0u0t0h0z0">重ねるハザードマップで地図を見る</a></p>';
+  h+='<div class="src"><b>判定に使ったデータ</b><ul>'+j.datasets.map(d=>'<li>'+esc(d.name)+' — データ時点 '+esc(d.vintage)+(d.note?'（'+esc(d.note)+'）':'')+'</li>').join('')+'</ul>'+esc(j.disclaimer)+'</div></div>';
+  document.getElementById('out').innerHTML=h; document.getElementById('out').scrollIntoView({behavior:'smooth',block:'start'});
+}
+(function(){var m=location.search.match(/[?&]q=([^&]+)/); if(m){document.getElementById('q').value=decodeURIComponent(m[1].replace(/\+/g,' ')); go();}})();
+</script>
+{% endblock %}

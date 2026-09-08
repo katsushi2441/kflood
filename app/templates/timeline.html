@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% set nav = 'timeline' %}
+{% block title %}マイ・タイムライン（{{ res.address }}）｜{{ site }}{% endblock %}
+{% block css %}
+table.tl{width:100%;border-collapse:collapse;font-size:14.5px}table.tl th,table.tl td{border:1px solid var(--line);padding:10px;vertical-align:top}table.tl th{background:var(--teal-l);color:var(--navy);width:26%;text-align:left}
+table.tl td ul{margin:0;padding-left:18px}table.tl td li{margin:3px 0}
+.pol{background:var(--red-l);border-left:5px solid var(--red);padding:12px 14px;border-radius:8px;font-size:17px;font-weight:800;color:var(--red)}.pol.ok{background:var(--teal-l);border-color:var(--teal);color:var(--teal-d)}.pol small{display:block;font-weight:600;font-size:13.5px;color:var(--ink);margin-top:4px}
+@media (max-width:600px){table.tl th,table.tl td{display:block;width:auto}table.tl th{border-bottom:0}}
+{% endblock %}
+{% block body %}
+<div class="noprint" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+<h1 style="margin:0">マイ・タイムライン</h1>
+<div><button class="btn sm" onclick="window.print()">印刷する</button> <a class="btn ghost sm" href="timeline">条件を変える</a> <a class="btn ghost sm" href="./?q={{ res.query|urlencode }}">判定に戻る</a></div>
+</div>
+<div class="panel">
+<div class="src">住所: <b>{{ res.address }}</b>／作成日 {{ today }}／世帯条件:
+{% set conds = [] %}{% if hh.elderly %}{% set _ = conds.append('高齢者') %}{% endif %}{% if hh.infant %}{% set _ = conds.append('乳幼児') %}{% endif %}{% if hh.disabled %}{% set _ = conds.append('障害・要介護') %}{% endif %}{% if hh.car %}{% set _ = conds.append('車あり') %}{% endif %}{% if hh.upper_floor %}{% set _ = conds.append('2階以上あり') %}{% endif %}{% if hh.pet %}{% set _ = conds.append('ペット') %}{% endif %}
+{{ conds|join('・') if conds else '指定なし' }}</div>
+<h2>この場所の浸水想定</h2>
+<div class="grid">
+{% set n = res.national %}{% set w = res.naisui %}
+<div class="card {{ 'lv3' if n.max and n.max.rank>=3 else 'lv2' if n.max and n.max.rank==2 else 'lv1' if n.max else 'none' }}"><div class="k">洪水 想定最大規模</div><div class="v">{{ n.max.label if n.max else ('未収録' if n.status=='uncovered' else '区域外') }}</div></div>
+<div class="card {{ 'lv3' if n.duration and n.duration.rank>=3 else 'lv2' if n.duration else 'none' }}"><div class="k">浸水継続時間</div><div class="v">{{ n.duration.label if n.duration else '想定なし' }}</div></div>
+<div class="card {{ 'lv3' if n.collapse else 'none' }}"><div class="k">家屋倒壊等氾濫想定区域</div><div class="v">{{ n.collapse|map(attribute='label')|join('・') if n.collapse else '該当なし' }}</div></div>
+<div class="card {{ 'lv2' if w.status=='inside' and w.depth_m>=0.5 else 'lv1' if w.status=='inside' else 'none' }}"><div class="k">内水 浸水深</div><div class="v">{{ (w.depth_label ~ '（' ~ w.depth_m ~ 'm）') if w.status=='inside' else ('未収録' if w.status=='uncovered' else '想定なし') }}</div></div>
+</div>
+<h2>避難の方針</h2>
+<div class="pol {{ 'ok' if tl.policy.startswith('在宅') }}">{{ tl.policy }}<small>理由: {{ tl.why }}。最終的には市区町村の避難情報に従ってください。</small></div>
+<h2>いつ・何をするか</h2>
+<div class="tscroll"><table class="tl">
+{% for lv in tl.levels %}
+<tr><th>{{ lv[0] }}<br><span class="badge {{ 'red' if loop.index>=3 else 'amber' if loop.index==2 else '' }}">{{ lv[1] }}</span><br><span class="src">{{ lv[2] }}</span></th>
+<td><ul>{% for a in tl.rows[loop.index0] %}<li>{{ a }}</li>{% endfor %}</ul></td></tr>
+{% endfor %}
+</table></div>
+<h2>家族で決めておくこと（書き込み欄）</h2>
+<div class="tscroll"><table class="t">
+<tr><th>避難先（第1）</th><td>&nbsp;</td><th>避難先（第2）</th><td>&nbsp;</td></tr>
+<tr><th>家族の集合場所</th><td>&nbsp;</td><th>連絡方法（災害用伝言ダイヤル171など）</th><td>&nbsp;</td></tr>
+<tr><th>近所で声をかける人</th><td>&nbsp;</td><th>持ち出すもの（追加）</th><td>&nbsp;</td></tr>
+</table></div>
+{% for t in res.notes %}<div class="note">{{ t }}</div>{% endfor %}
+<div class="src" style="margin-top:12px"><b>判定に使ったデータ</b><ul>{% for d in res.datasets %}<li>{{ d.name }} — データ時点 {{ d.vintage }}</li>{% endfor %}</ul>{{ res.disclaimer }} 避難行動の段階分けは内閣府「避難情報に関するガイドライン」の警戒レベルに沿っています。</div>
+</div>
+{% endblock %}

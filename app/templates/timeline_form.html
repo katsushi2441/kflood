@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% set nav = 'timeline' %}
+{% block title %}マイ・タイムラインを作る｜{{ site }}{% endblock %}
+{% block body %}
+<h1>住所と世帯の条件から、マイ・タイムラインを作ります</h1>
+<p class="lead">マイ・タイムラインは、台風や大雨のときに「いつ・何をするか」を家族ごとに決めておく行動表です。この住所の浸水想定（深さ・継続時間・家屋倒壊区域）と世帯の条件から、立退き避難か上の階への避難かを含めて下書きを作ります。印刷して冷蔵庫に貼り、家族で直してください。</p>
+<div class="panel">
+<form action="timeline" method="get">
+<label style="font-weight:700">住所</label>
+<div class="search" style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px"><input type="text" name="q" style="flex:1 1 260px;min-width:0;font-size:17px;padding:12px 14px;border:2px solid var(--line);border-radius:10px" placeholder="例: 愛知県名古屋市中川区富田町大字千音寺" required></div>
+<label style="font-weight:700">世帯の条件（あてはまるものすべて）</label>
+<div class="grid" style="margin:6px 0 14px">
+<label class="card"><input type="checkbox" name="elderly" value="1"> 高齢者（避難に時間がかかる人）がいる</label>
+<label class="card"><input type="checkbox" name="infant" value="1"> 乳幼児がいる</label>
+<label class="card"><input type="checkbox" name="disabled" value="1"> 障害のある人・要介護の人がいる</label>
+<label class="card"><input type="checkbox" name="car" value="1"> 車で避難できる</label>
+<label class="card"><input type="checkbox" name="upper_floor" value="1"> 2階以上の部屋がある（一戸建て2階建て・マンション上層階など）</label>
+<label class="card"><input type="checkbox" name="pet" value="1"> ペットがいる</label>
+</div>
+<button class="btn" type="submit">マイ・タイムラインを作る</button>
+</form>
+</div>
+<div class="panel">
+<h2 style="margin-top:0">作られるもの</h2>
+<div class="steps">
+<div class="step"><b>1</b><strong>避難の方針</strong>浸水深3m以上・家屋倒壊区域・3日以上の浸水なら「立退き避難」。浅くて短く、上の階があるなら「垂直避難」も選択肢に</div>
+<div class="step"><b>2</b><strong>警戒レベルごとの行動</strong>数日前（レベル1〜2）・高齢者等避難（レベル3）・避難指示（レベル4）・緊急安全確保（レベル5）の4段階</div>
+<div class="step"><b>3</b><strong>世帯条件の反映</strong>要配慮者がいればレベル3で避難開始。車の有無、ペット同行、上階への備蓄などを行に足す</div>
+</div>
+<p class="src" style="margin-top:12px">国土交通省が配布するマイ・タイムライン検討ツール「逃げキッド」は、この表を自分で書き込む形式です。本ツールは浸水想定の判定結果から下書きを自動で作る点が違います。最終的な判断は自治体の避難情報に従ってください。</p>
+</div>
+{% endblock %}

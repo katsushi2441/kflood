@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% set nav = 'about' %}
+{% block title %}データと設計について｜{{ site }}{% endblock %}
+{% block body %}
+<h1>どのデータで、どう判定しているか</h1>
+<p class="lead">災害リスクを扱う道具でいちばん危ないのは、利用者に「調べた」と思わせて安心させてしまうことです。そこを設計で潰しています。</p>
+<div class="panel">
+<h2 style="margin-top:0">設計の芯</h2>
+<div class="steps">
+<div class="step"><b>1</b><strong>○×ではなく「何メートル・何日」</strong>0.5mと5mでは取るべき行動が違います。浸水深・継続時間・家屋倒壊区域を分けて返し、行動の目安を添えます</div>
+<div class="step"><b>2</b><strong>「区域外」と「未収録」を区別</strong>取り込んでいない1次メッシュや自治体では、黙って「区域外」と答えません</div>
+<div class="step"><b>3</b><strong>必ずデータ時点を添える</strong>時点を確認できないデータでは判定しません。古いデータには注意書きを出します</div>
+<div class="step"><b>4</b><strong>近くに区域があれば言い切らない</strong>住所の座標は町丁目の代表点です。250m以内に区域があれば地番での確認を促します</div>
+</div>
+</div>
+<div class="panel">
+<h2 style="margin-top:0">洪水（全国）</h2>
+<div class="tscroll"><table class="t">
+<tr><th>出典</th><td>国土数値情報 洪水浸水想定区域（1次メッシュ単位）データ 第4.0版／国土交通省 <a href="https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-A31-v4_0.html" target="_blank" rel="noopener">配布ページ</a></td></tr>
+<tr><th>データ作成年度</th><td>{{ a31_vintage or '未取り込み' }}</td></tr>
+<tr><th>収録</th><td>1次メッシュ {{ meshes }} 件（{{ a31|length }} ファイル）。洪水予報河川・水位周知河川と、その他の河川の両方</td></tr>
+<tr><th>内容</th><td>計画規模・想定最大規模の浸水深ランク、浸水継続時間ランク、家屋倒壊等氾濫想定区域（氾濫流・河岸侵食）</td></tr>
+<tr><th>対象</th><td>水防法で指定された洪水予報河川・水位周知河川など、河川管理者が図面を提供した河川。指定外の小河川は含まれません</td></tr>
+<tr><th>利用条件</th><td>国土数値情報の利用約款（出典の明示・加工した旨の表示）。商用利用可</td></tr>
+</table></div>
+</div>
+<div class="panel">
+<h2 style="margin-top:0">内水（自治体版）</h2>
+{% if muni %}
+<div class="tscroll"><table class="t">
+<tr><th>データ</th><th>時点</th><th>取り込み日</th><th>出典表記</th></tr>
+{% for r in muni %}<tr><td>{{ r[1] }}</td><td>{{ r[2] }}</td><td>{{ r[3] }}</td><td>{{ r[4] }}{% if r[5] %}<br><span class="src">{{ r[5] }}</span>{% endif %}</td></tr>{% endfor %}
+</table></div>
+{% else %}<p>内水データは未取り込みです。</p>{% endif %}
+<p class="src" style="margin-top:10px">内水は国の一括データが無く、自治体ごとに公開されます。他の自治体版を作るには、その自治体の内水浸水想定区域図（Shapefile 等）を <code>scripts/load_nagoya_naisui.py</code> の DATASETS に足して取り込みます。属性名・座標系・出典表記を合わせるだけで、判定と画面はそのまま動きます。名古屋市の元図: <a href="{{ links.nagoya_naisui }}" target="_blank" rel="noopener">内水氾濫ハザードマップ（名古屋市）</a></p>
+</div>
+<div class="panel">
+<h2 style="margin-top:0">判定の手順</h2>
+<ol>
+<li>住所を国土地理院の住所検索APIで座標に変えます（町丁目の代表点になります）</li>
+<li>その座標を含む洪水ポリゴンを PostGIS で探し、カテゴリごとに最も悪いランクを採ります</li>
+<li>住所に収録自治体名（名古屋市）が含まれるときだけ、内水のセルを探します</li>
+<li>浸水深・継続時間・家屋倒壊区域から行動の目安を組み立て、データ時点と出典を添えて返します</li>
+</ol>
+<p class="src">海抜は国土地理院の標高APIです。判定は参考情報であり公的な証明ではありません。不動産取引の重要事項説明には自治体のハザードマップそのものを使ってください。</p>
+</div>
+{% endblock %}

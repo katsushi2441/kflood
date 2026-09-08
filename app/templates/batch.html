@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% set nav = 'batch' %}
+{% block title %}CSV一括判定｜{{ site }}{% endblock %}
+{% block body %}
+<h1>住所のCSVをまとめて判定します</h1>
+<p class="lead">会社の拠点・店舗・管理物件・支援先の住所を一覧で照らし、洪水の浸水深・継続時間・家屋倒壊区域・内水の浸水深を1行ずつ返します。BCP（事業継続計画）の一次点検や、議員事務所が地域の施設を洗うときに。</p>
+<div class="panel">
+<form action="api/batch" method="post" enctype="multipart/form-data">
+<p><input type="file" name="file" accept=".csv,text/csv" required></p>
+<p class="src">1列目（または「住所」「所在地」「address」列）を住所として読みます。1回 {{ batch_max }} 行まで・1MBまで・UTF-8 か Shift_JIS。1行あたり約0.5秒かかります（国土地理院の住所検索に負荷をかけないため）。</p>
+<button class="btn" type="submit">判定してCSVをダウンロード</button>
+</form>
+</div>
+<div class="panel">
+<h2 style="margin-top:0">入力CSVの例</h2>
+<pre style="background:var(--bg);padding:12px;border-radius:8px;overflow-x:auto;font-size:13px">名称,住所
+本社,愛知県名古屋市中区三の丸3丁目1-1
+名古屋港倉庫,愛知県名古屋市港区港明1丁目
+大垣営業所,岐阜県大垣市丸の内2丁目</pre>
+<h2>出力の列</h2>
+<div class="tscroll"><table class="t">
+<tr><th>列</th><th>内容</th></tr>
+<tr><td>洪水 想定最大規模 浸水深</td><td>0.5m未満／0.5〜3m／3〜5m／5〜10m／10〜20m／20m以上（国土数値情報の浸水深ランク）</td></tr>
+<tr><td>洪水 計画規模 浸水深</td><td>河川整備の目標規模の降雨での浸水深</td></tr>
+<tr><td>浸水継続時間</td><td>12時間未満〜4週間以上の7段階</td></tr>
+<tr><td>家屋倒壊等氾濫想定区域</td><td>氾濫流／河岸侵食／両方</td></tr>
+<tr><td>内水 浸水深(m)・継続時間</td><td>収録自治体（名古屋市）だけ。未収録は空欄</td></tr>
+<tr><td>判定・注意・データ時点</td><td>区域内／区域外／未収録の区別、近傍の注意、判定に使ったデータの時点</td></tr>
+</table></div>
+<div class="note" style="margin-top:12px">不動産取引の重要事項説明（水害ハザードマップにおける対象物件の位置の説明）は、自治体が作成したハザードマップそのものを提示する必要があります。この一括判定は事前の洗い出しに使い、説明には自治体の図面を使ってください。</div>
+</div>
+{% endblock %}

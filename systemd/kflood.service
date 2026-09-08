@@ -1,0 +1,16 @@
+[Unit]
+Description=Kurage 洪水・内水ハザードマップ (kflood) :18386
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/kojima/work/kflood
+Environment=KFLOOD_PORT=18386
+EnvironmentFile=-/home/kojima/work/kflood/.env
+ExecStart=/home/kojima/work/kflood/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 18386
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
