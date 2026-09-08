@@ -21,6 +21,8 @@ $ch = curl_init($BACKEND . $path . $qs);
 $headers = array('X-Forwarded-Proto: https', 'X-Forwarded-Host: kurage.exbridge.jp');
 if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) { $headers[] = 'X-Forwarded-For: ' . $_SERVER['HTTP_X_FORWARDED_FOR']; }
 elseif (!empty($_SERVER['REMOTE_ADDR'])) { $headers[] = 'X-Forwarded-For: ' . $_SERVER['REMOTE_ADDR']; }
+// CSV一括判定(multipart)は Content-Type の boundary が要る。中継しないと FastAPI が file を受け取れない
+if (!empty($_SERVER['CONTENT_TYPE'])) { $headers[] = 'Content-Type: ' . $_SERVER['CONTENT_TYPE']; }
 curl_setopt_array($ch, array(
     CURLOPT_CUSTOMREQUEST => $_SERVER['REQUEST_METHOD'],
     CURLOPT_RETURNTRANSFER => true, CURLOPT_HEADER => true,
@@ -38,7 +40,7 @@ $hsize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
 curl_close($ch);
 http_response_code($status);
 foreach (explode("\r\n", substr($res, 0, $hsize)) as $h) {
-    if (stripos($h, 'Content-Type:') === 0 || stripos($h, 'Cache-Control:') === 0) { header($h); }
+    if (stripos($h, 'Content-Type:') === 0 || stripos($h, 'Cache-Control:') === 0 || stripos($h, 'Content-Disposition:') === 0) { header($h); }
 }
 // 計測タグ(kurage系はsimpletrack)をHTMLにだけ差し込む
 $body = substr($res, $hsize);
