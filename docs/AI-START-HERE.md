@@ -18,6 +18,7 @@ docker compose up -d
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python scripts/load_a31.py 5236 5237      # まず名古屋周辺。全国は all（1〜2時間・約60GB）
 .venv/bin/python scripts/load_nagoya_naisui.py      # 名古屋市の内水
+.venv/bin/python scripts/load_nagoya_gakku.py       # 名古屋市の学区線（いまの避難情報に使う）
 .venv/bin/python -m pytest -q tests
 .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 18386 &
 curl http://127.0.0.1:18386/healthz

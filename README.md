@@ -20,6 +20,7 @@
 | 内水の浸水深・継続時間 | メートル値と分（自治体データ） | 名古屋市 内水氾濫ハザードマップ |
 | 海抜 | 国土地理院 標高API | — |
 | 行動の目安 | 立退き避難か、上の階への垂直避難で足りるか | 浸水深3m以上・倒壊区域・3日以上の浸水で立退き |
+| いまの避難情報 | 住所→学区（名古屋市 学区線 CC BY）→ 市の災害情報配信に出ている警戒レベル・河川・発令時刻（3分キャッシュ）。取得不可と発令なしを区別 | 名古屋市 災害情報配信 https://www.city.nagoya.jp/1000103.html |
 | マイ・タイムライン | 世帯条件（高齢者・乳幼児・車・上階・ペット）を足して、警戒レベル1〜5の行動表を印刷 | 内閣府 避難情報に関するガイドライン |
 | CSV一括判定 | 住所CSV（300行まで）→ 判定CSV | BCP・物件の洗い出し用 |
 
@@ -63,12 +64,20 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python scripts/load_a31.py 23           # 都道府県コード
 .venv/bin/python scripts/load_a31.py all          # 全国（数十分）
 .venv/bin/python scripts/load_nagoya_naisui.py    # 名古屋市 内水
+.venv/bin/python scripts/load_nagoya_gakku.py     # 名古屋市 学区線（いまの避難情報に使う）
 systemctl --user enable --now kflood.service      # または .venv/bin/uvicorn app.main:app --port 18386
 curl 'http://127.0.0.1:18386/api/check?q=愛知県名古屋市中川区富田町大字千音寺'
 ```
 
 `ogr2ogr`（GDAL）が必要です（Ubuntu: `apt install gdal-bin`）。A31 の GeoJSON は GDAL がストリーミングで読めるため、
 431MB のファイルを 16 秒・常駐メモリ 120MB で取り込めます（2026-09-08 実測）。
+
+## いまの避難情報（名古屋市版）
+
+名古屋市の避難情報は「河川 × 対象学区」で出ます。`scripts/load_nagoya_gakku.py` で学区線（CC BY・268学区）を取り込むと、
+`app/alerts.py` が市の災害情報配信ページから警戒レベル・種別・河川・発令時刻・対象学区の**事実だけ**を抽出し（市の文章は転載しない）、
+判定・マイ・タイムライン・CSV一括に「いま、この学区に何が出ているか」を添えます。市のページを取得できないときは「取得できません」と返し、「発令なし」とは言いません。
+2026-09-08 の実際の発令（24件・レベル5が3河川）を `tests/fixtures/` に固定してテストしています。
 
 ## 他の自治体の内水を足す
 
