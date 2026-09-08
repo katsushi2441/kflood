@@ -22,7 +22,7 @@ $headers = array('X-Forwarded-Proto: https', 'X-Forwarded-Host: kurage.exbridge.
 if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) { $headers[] = 'X-Forwarded-For: ' . $_SERVER['HTTP_X_FORWARDED_FOR']; }
 elseif (!empty($_SERVER['REMOTE_ADDR'])) { $headers[] = 'X-Forwarded-For: ' . $_SERVER['REMOTE_ADDR']; }
 // CSV一括判定(multipart)は Content-Type の boundary が要る。中継しないと FastAPI が file を受け取れない
-if (!empty($_SERVER['CONTENT_TYPE'])) { $headers[] = 'Content-Type: ' . $_SERVER['CONTENT_TYPE']; }
+if (!empty($_SERVER['CONTENT_TYPE']) && empty($_FILES)) { $headers[] = 'Content-Type: ' . $_SERVER['CONTENT_TYPE']; }
 curl_setopt_array($ch, array(
     CURLOPT_CUSTOMREQUEST => $_SERVER['REQUEST_METHOD'],
     CURLOPT_RETURNTRANSFER => true, CURLOPT_HEADER => true,
@@ -30,7 +30,18 @@ curl_setopt_array($ch, array(
     CURLOPT_TIMEOUT => 60, CURLOPT_FOLLOWLOCATION => false,
 ));
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
-    curl_setopt($ch, CURLOPT_POSTFIELDS, file_get_contents('php://input'));
+    if (!empty($_FILES)) {
+        // multipart は php://input で読めない（PHP が $_FILES に展開してしまう）。CURLFile で組み直して送る
+        $fields = $_POST;
+        foreach ($_FILES as $k => $f) {
+            if (isset($f['tmp_name']) && is_uploaded_file($f['tmp_name'])) {
+                $fields[$k] = new CURLFile($f['tmp_name'], $f['type'] ? $f['type'] : 'application/octet-stream', $f['name']);
+            }
+        }
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $fields);
+    } else {
+        curl_setopt($ch, CURLOPT_POSTFIELDS, file_get_contents('php://input'));
+    }
 }
 $res = curl_exec($ch);
 if ($res === false) { http_response_code(502); header('Content-Type: text/plain; charset=utf-8');
