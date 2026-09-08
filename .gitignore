@@ -1,6 +1,8 @@
 .venv/
-data/
+data/*
+!data/nagoya_wards.json
 .env
 php/kflood_config.php
 __pycache__/
 *.pyc
+!data/nagoya_wards.json

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% set nav = 'nagoya' %}
+{% block title %}{{ r.target }}の氾濫・避難情報（いま）｜対象学区と浸水想定・避難先 — 名古屋市 | {{ site }}{% endblock %}
+{% block desc %}{{ r.target }}の水位上昇で名古屋市が発令する避難情報（警戒レベル）を、いまの状況と履歴、対象学区（{{ r.ward_list|map(attribute='name')|join('・') }}）つきでまとめました。流域の住所を入れれば何メートル・何日浸かる想定かと避難先も分かります。{% endblock %}
+{% block body %}
+<nav class="src" style="margin-bottom:8px"><a href="../../">住所で判定</a> › <a href="../../nagoya/">名古屋市</a> › {{ r.target }}</nav>
+<h1>{{ r.target }}の氾濫・避難情報｜対象学区と浸水想定・避難先（名古屋市）</h1>
+<p class="lead">{% if r.kind_note %}{{ r.kind_note }}。{% else %}{{ r.target }}の水位が上がると、名古屋市は「{{ r.target }}の河川流域の地域」に学区単位で避難情報を出します。{% endif %}ここでは、いま出ている発令、これまでの発令、対象学区、流域で浸水想定を調べる方法をまとめています。</p>
+<div class="panel">
+<h2 style="margin-top:0">いまの発令（{{ live.fetched_at }} 取得）</h2>
+{% if live.status == 'unavailable' %}<div class="note">市の災害情報配信を取得できませんでした。発令が無いという意味ではありません。<a href="{{ live.source_url }}" target="_blank" rel="noopener">市のページ</a>で確認してください。</div>
+{% elif not r.current %}<div class="card none"><div class="v">現在、{{ r.target }}に関する警戒レベル3〜5の発令はありません</div><div class="s">出典: <a href="{{ live.source_url }}" target="_blank" rel="noopener">{{ live.source }}</a></div></div>
+{% else %}{% for it in r.current %}<div class="card {{ 'lv3' if it.level>=4 else 'lv2' }}" style="margin-bottom:8px"><div class="k">{{ (it.issued_at or '')[5:16]|replace('T',' ') }} 発令</div><div class="v">警戒レベル{{ it.level }}・{{ it.label }}</div><div class="s">対象: {% for wn, g in it.wards.items() %}<b>{{ wn }}</b>（{{ '全学区' if '*' in g else g|join('、') }}）{% if not loop.last %}／{% endif %}{% endfor %}</div></div>{% endfor %}
+<p class="src">出典: <a href="{{ live.source_url }}" target="_blank" rel="noopener">{{ live.source }}</a>（事実のみ抽出。行動要請の文言は市のページで）</p>{% endif %}
+</div>
+<div class="panel">
+<h2 style="margin-top:0">{{ r.target }}の発令で対象になる学区</h2>
+{% if r.ward_list %}<div class="tscroll"><table class="t"><tr><th>区</th><th>学区</th></tr>
+{% for wd in r.ward_list %}<tr><td>{% if wd.slug %}<a href="../../nagoya/{{ wd.slug }}/">{{ wd.name }}</a>{% else %}{{ wd.name }}{% endif %}</td><td>{{ '全学区' if '*' in wd.gakku else wd.gakku|join('、') }}</td></tr>{% endfor %}
+</table></div>
+<p class="src">市が発令時に公表した対象学区を記録したものです（最新の発令: {{ r.history[0].issued_at[:16]|replace('T',' ') if r.history else '—' }}）。次の発令で範囲が変わることがあります。</p>{% else %}<p class="src">対象学区の記録はまだありません。</p>{% endif %}
+</div>
+<div class="panel">
+<h2 style="margin-top:0">発令の履歴</h2>
+{% if r.history %}<div class="tscroll"><table class="t"><tr><th>発令</th><th>警戒レベル</th><th>確認した期間</th></tr>
+{% for h in r.history %}<tr><td>{{ (h.issued_at or '')[:16]|replace('T',' ') }}</td><td>レベル{{ h.level }}・{{ h.kind }}</td><td>{{ h.first_seen }} 〜 {{ h.last_seen }}</td></tr>{% endfor %}
+</table></div>
+<p class="src">本サイトが市の災害情報配信を取得して記録した範囲の履歴です（2026-09-08 以降）。解除の時刻は記録していません。</p>{% else %}<p class="src">履歴はまだありません。</p>{% endif %}
+</div>
+<div class="panel">
+<h2 style="margin-top:0">流域の住所で、浸水想定と避難先を調べる</h2>
+<form class="search" action="../../" method="get"><input type="text" name="q" placeholder="例: 愛知県名古屋市天白区植田1丁目" required><button class="btn" type="submit">判定する</button></form>
+<p class="src" style="margin-top:8px">想定最大規模の浸水深・浸水継続時間・家屋倒壊等氾濫想定区域・内水と、その学区の発令を返します。</p>
+<p style="margin-top:10px"><a class="btn ghost" href="{{ links.krefuge }}?hazard=flood&ref=kflood-river" target="_blank" rel="noopener">洪水で使える避難所を住所から探す</a></p>
+</div>
+{% endblock %}

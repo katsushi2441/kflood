@@ -31,6 +31,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from fastapi.templating import Jinja2Templates
 
 from app import alerts as live_alerts
+from app import nagoya
 from app.codes import (CATEGORY, COLLAPSE, DEPTH_ACTION, DEPTH_RANK, DURATION_RANK, LONG_DURATION_RANK, RIVER,
                        minutes_label, naisui_band)
 
@@ -104,6 +105,17 @@ def elevation(lon, lat):
         return dict(m=float(e), source=j.get('hsrc', ''))
     except Exception:  # noqa: BLE001
         return None
+
+
+def get_live() -> dict:
+    """市の避難情報を取得し、発令があれば履歴（河川→学区の対応）に記録する。"""
+    d = live_alerts.fetch()
+    if d.get('items'):
+        try:
+            nagoya.record(d)
+        except Exception:  # noqa: BLE001
+            pass
+    return d
 
 
 def vintage_year(v: str):
@@ -189,7 +201,7 @@ def check_point(lon, lat, title=''):
         gk = cur.fetchone()
         if gk:
             al['gakku'] = dict(ward=gk[0], name=gk[1], area=gk[2])
-            data = live_alerts.fetch()
+            data = get_live()
             al.update(status=data.get('status', 'unavailable'), fetched_at=data.get('fetched_at'), source=data.get('source'), source_url=data.get('source_url'))
             if data.get('items'):
                 hits = live_alerts.for_gakku(data, gk[0], gk[1])
@@ -352,14 +364,15 @@ def healthz():
         v, d = cur.fetchone()
         cur.execute('SELECT count(*) FROM gakku')
         gk = cur.fetchone()[0]
-    a = live_alerts.fetch()
+    a = get_live()
     return dict(ok=True, flood_meshes=meshes, flood_polygons=polys, flood_vintage=v, flood_loaded=str(d) if d else None,
                 naisui_coverage=cov, municipal_datasets=muni, gakku=gk,
                 alerts=dict(status=a.get('status'), items=len(a.get('items', [])), fetched_at=a.get('fetched_at'), source=a.get('source_url')))
 
 
 def page(request: Request, name: str, **kw):
-    kw.update(site=SITE, links=LINKS, year=date.today().year)
+    depth = max(0, request.url.path.strip('/').count('/') + (1 if request.url.path.strip('/') and request.url.path.endswith('/') else 0))
+    kw.update(site=SITE, links=LINKS, year=date.today().year, root='../' * depth if depth else './')
     return templates.TemplateResponse(request, name, kw)
 
 
@@ -480,6 +493,70 @@ def ogp():
                         headers={'Cache-Control': 'public, max-age=86400'})
 
 
+# ---- 名古屋市の受け皿ページ（河川別・区別）。検索は河川名・区名で来るので固定URLを持つ ----
+try:
+    nagoya.seed_if_empty()
+except Exception:  # noqa: BLE001
+    pass
+
+
+def _ward_stats(area: str, ward: str):
+    try:
+        with db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT sample_n, pct_rank, pct_depth05, pct_depth3, pct_collapse, pct_naisui, computed_at::date FROM ward_stats WHERE area=%s AND ward=%s", (area, ward))
+            r = cur.fetchone()
+        if not r:
+            return None
+        return dict(sample_n=r[0], pct_rank=r[1], pct_depth05=r[2], pct_depth3=r[3], pct_collapse=r[4], pct_naisui=r[5], computed_at=str(r[6]))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+@app.get('/nagoya/', response_class=HTMLResponse)
+def nagoya_hub(request: Request):
+    live = get_live()
+    sm = nagoya.city_summary(live)
+    rivers = nagoya.rivers()
+    return page(request, 'nagoya.html', live=live, sm=sm, wards=nagoya.wards(), rivers=rivers,
+                slugs={r['target']: r['slug'] for r in rivers} | {it['target']: nagoya.river_slug(it['target']) for it in sm['items']},
+                current_targets={it['target'] for it in sm['items']})
+
+
+@app.get('/nagoya/{slug}/', response_class=HTMLResponse)
+def nagoya_ward(request: Request, slug: str):
+    w = nagoya.ward_by_slug(slug)
+    if not w:
+        raise HTTPException(404, 'その区のページはありません')
+    live = get_live()
+    with db() as conn, conn.cursor() as cur:
+        cur.execute("SELECT name FROM gakku WHERE area=%s AND ward=%s ORDER BY code NULLS LAST, name", (nagoya.CITY, w['name']))
+        gakku = [r[0] for r in cur.fetchall()]
+    walerts = nagoya.ward_alerts(w['name'], live)
+    gmax = {}
+    for a in walerts:
+        for g in (gakku if '*' in a['gakku'] else a['gakku']):
+            gmax[g] = max(gmax.get(g, 0), a['level'])
+    return page(request, 'ward.html', w=w, live=live, gakku=gakku, walerts=walerts, gmax=gmax,
+                stats=_ward_stats(nagoya.CITY, w['name']), rivers=nagoya.rivers_for_ward(w['name']))
+
+
+@app.get('/river/{slug}/', response_class=HTMLResponse)
+def river_page(request: Request, slug: str):
+    live = get_live()
+    r = nagoya.river_detail(slug, live)
+    if not r:
+        raise HTTPException(404, 'その河川のページはありません')
+    return page(request, 'river.html', r=r, live=live)
+
+
+@app.get('/sitemap.xml')
+def sitemap(request: Request):
+    base = 'https://kurage.exbridge.jp/kflood.php/'
+    urls = ['', 'nagoya/', 'timeline', 'batch', 'about'] + [f"nagoya/{w['slug']}/" for w in nagoya.wards()] + [f"river/{r['slug']}/" for r in nagoya.rivers()]
+    body = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + ''.join(f'<url><loc>{base}{u}</loc></url>' for u in urls) + '</urlset>'
+    return PlainTextResponse(body, media_type='application/xml')
+
+
 @app.get('/robots.txt', response_class=PlainTextResponse)
 def robots():
-    return 'User-agent: *\nAllow: /\nDisallow: /api/\n'
+    return 'User-agent: *\nAllow: /\nDisallow: /api/\nSitemap: https://kurage.exbridge.jp/kflood.php/sitemap.xml\n'

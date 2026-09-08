@@ -1,0 +1,150 @@
+{
+ "asof": "2026-09-08",
+ "source": "名古屋市 区役所の所在地（kseido/data/wards.json より）",
+ "wards": [
+  {
+   "name": "千種区",
+   "slug": "chikusa",
+   "office_name": "千種区役所",
+   "office_address": "愛知県名古屋市千種区覚王山通８丁目３７番地",
+   "office_tel": "",
+   "lat": 35.166527,
+   "lon": 136.946411
+  },
+  {
+   "name": "東区",
+   "slug": "higashi",
+   "office_name": "東区役所",
+   "office_address": "愛知県名古屋市東区筒井一丁目７番７４号",
+   "office_tel": "",
+   "lat": 35.179383,
+   "lon": 136.925956
+  },
+  {
+   "name": "北区",
+   "slug": "kita",
+   "office_name": "北区役所",
+   "office_address": "愛知県名古屋市北区清水四丁目１７番１号",
+   "office_tel": "",
+   "lat": 35.194153,
+   "lon": 136.911951
+  },
+  {
+   "name": "西区",
+   "slug": "nishi",
+   "office_name": "西区役所",
+   "office_address": "愛知県名古屋市西区花の木二丁目１８番１号",
+   "office_tel": "",
+   "lat": 35.189155,
+   "lon": 136.8903
+  },
+  {
+   "name": "中村区",
+   "slug": "nakamura",
+   "office_name": "中村区役所",
+   "office_address": "愛知県名古屋市中村区松原町１丁目２３番地の１",
+   "office_tel": "",
+   "lat": 35.17683,
+   "lon": 136.868423
+  },
+  {
+   "name": "中区",
+   "slug": "naka",
+   "office_name": "中区役所",
+   "office_address": "愛知県名古屋市中区栄四丁目１番８号",
+   "office_tel": "",
+   "lat": 35.168591,
+   "lon": 136.910414
+  },
+  {
+   "name": "昭和区",
+   "slug": "showa",
+   "office_name": "昭和区役所",
+   "office_address": "愛知県名古屋市昭和区阿由知通３丁目１９番地",
+   "office_tel": "",
+   "lat": 35.150108,
+   "lon": 136.93399
+  },
+  {
+   "name": "瑞穂区",
+   "slug": "mizuho",
+   "office_name": "瑞穂区役所",
+   "office_address": "愛知県名古屋市瑞穂区瑞穂通３丁目３２番地",
+   "office_tel": "",
+   "lat": 35.131516,
+   "lon": 136.934753
+  },
+  {
+   "name": "熱田区",
+   "slug": "atsuta",
+   "office_name": "熱田区役所",
+   "office_address": "愛知県名古屋市熱田区神宮三丁目１番１５号",
+   "office_tel": "",
+   "lat": 35.128393,
+   "lon": 136.910456
+  },
+  {
+   "name": "中川区",
+   "slug": "nakagawa",
+   "office_name": "中川区役所",
+   "office_address": "愛知県名古屋市中川区高畑一丁目２２３番地",
+   "office_tel": "",
+   "lat": 35.141453,
+   "lon": 136.854752
+  },
+  {
+   "name": "港区",
+   "slug": "minato",
+   "office_name": "港区役所",
+   "office_address": "愛知県名古屋市港区港明一丁目１２番２０号",
+   "office_tel": "",
+   "lat": 35.107841,
+   "lon": 136.885537
+  },
+  {
+   "name": "南区",
+   "slug": "minami",
+   "office_name": "南区役所",
+   "office_address": "愛知県名古屋市南区前浜通３丁目１０番地",
+   "office_tel": "",
+   "lat": 35.095043,
+   "lon": 136.931412
+  },
+  {
+   "name": "守山区",
+   "slug": "moriyama",
+   "office_name": "守山区役所",
+   "office_address": "愛知県名古屋市守山区小幡一丁目３番１号",
+   "office_tel": "",
+   "lat": 35.203412,
+   "lon": 136.976349
+  },
+  {
+   "name": "緑区",
+   "slug": "midori",
+   "office_name": "緑区役所",
+   "office_address": "愛知県名古屋市緑区青山二丁目１５番地",
+   "office_tel": "",
+   "lat": 35.070819,
+   "lon": 136.952138
+  },
+  {
+   "name": "名東区",
+   "slug": "meito",
+   "office_name": "名東区役所",
+   "office_address": "愛知県名古屋市名東区上社二丁目５０番地",
+   "office_tel": "",
+   "lat": 35.175861,
+   "lon": 137.010468
+  },
+  {
+   "name": "天白区",
+   "slug": "tempaku",
+   "office_name": "天白区役所",
+   "office_address": "愛知県名古屋市天白区島田二丁目２０１番地",
+   "office_tel": "",
+   "lat": 35.122616,
+   "lon": 136.975006
+  }
+ ]
+}

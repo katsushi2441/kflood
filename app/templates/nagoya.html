@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% set nav = 'nagoya' %}
+{% block title %}名古屋市の洪水・内水ハザードマップ｜いまの避難情報（河川別・区別）と避難先 | {{ site }}{% endblock %}
+{% block desc %}名古屋市の洪水・内水の浸水想定と、いま出ている避難情報（警戒レベル）を河川別・区別にまとめました。天白川・矢田川・新川などの氾濫時に対象となる学区、区ごとの浸水のおそれ、避難先の探し方。住所を入れれば何メートル・何日浸かる想定かも分かります。{% endblock %}
+{% block body %}
+<nav class="src" style="margin-bottom:8px"><a href="./">住所で判定</a> › 名古屋市</nav>
+<h1>名古屋市の洪水・内水ハザードマップ｜いまの避難情報と避難先</h1>
+<p class="lead">市の災害情報配信に出ている警戒レベルを河川別・区別に並べ、国の洪水浸水想定と市の内水ハザードマップ、避難先の探し方につなげます。{{ sm['items']|length }}件の発令データは {{ live.fetched_at }} に取得（3分ごとに更新）。</p>
+<div class="panel">
+<h2 style="margin-top:0">いま出ている避難情報（{{ live.fetched_at }} 取得）</h2>
+{% if live.status == 'unavailable' %}<div class="note">市の災害情報配信を取得できませんでした。発令が無いという意味ではありません。<a href="{{ live.source_url }}" target="_blank" rel="noopener">市のページ</a>で確認してください。</div>
+{% elif not sm['items'] %}<div class="card none"><div class="v">現在、警戒レベル3〜5の発令はありません</div><div class="s">出典: <a href="{{ live.source_url }}" target="_blank" rel="noopener">{{ live.source }}</a></div></div>
+{% else %}
+<div class="tscroll"><table class="t">
+<tr><th>警戒レベル</th><th>河川・種別</th><th>発令</th><th>対象の区</th></tr>
+{% for it in sm['items']|sort(attribute='level', reverse=True) %}
+<tr><td><span class="badge {{ 'red' if it.level>=4 else 'amber' }}">レベル{{ it.level }}・{{ it.label }}</span></td><td><a href="river/{{ slugs[it.target] }}/">{{ it.target }}</a></td><td>{{ (it.issued_at or '')[5:16]|replace('T',' ') }}</td><td>{{ it.wards.keys()|join('・') }}</td></tr>
+{% endfor %}
+</table></div>
+<p class="src">出典: <a href="{{ live.source_url }}" target="_blank" rel="noopener">{{ live.source }}</a>（事実のみ抽出。文言は本サイトのもの）{% if live.status=='stale' %}／前回取得値を表示中{% endif %}</p>
+{% endif %}
+</div>
+<div class="panel">
+<h2 style="margin-top:0">区から探す</h2>
+<div class="grid">
+{% for w in wards %}{% set lv = sm.ward_max.get(w.name) %}
+<a class="card {{ 'lv3' if lv and lv>=4 else 'lv2' if lv else 'none' }}" href="nagoya/{{ w.slug }}/" style="text-decoration:none"><div class="k">{{ w.name }}</div><div class="v" style="font-size:18px">{{ ('警戒レベル' ~ lv ~ ' 発令中') if lv else '発令なし' }}</div><div class="s">学区一覧・浸水のおそれ・避難先</div></a>
+{% endfor %}
+</div>
+</div>
+<div class="panel">
+<h2 style="margin-top:0">河川から探す（氾濫時に対象となる学区が分かっている河川）</h2>
+<div class="grid">
+{% for r in rivers %}
+<a class="card {{ 'lv3' if r.target in current_targets else 'none' }}" href="river/{{ r.slug }}/" style="text-decoration:none"><div class="k">{{ r.target }}</div><div class="v" style="font-size:18px">{{ '発令中' if r.target in current_targets else '発令なし' }}</div><div class="s">対象: {{ r.wards|join('・') }}{% if r.last_alert %}<br>直近: レベル{{ r.last_alert.level }}（{{ (r.last_alert.issued_at or '')[:10] }}）{% endif %}</div></a>
+{% endfor %}
+</div>
+<p class="src">対象学区は、市が発令時に公表した「河川流域の地域」の学区をそのまま記録したものです（発令が解除されても残します）。</p>
+</div>
+<div class="panel">
+<h2 style="margin-top:0">自宅・職場が何メートル・何日浸かる想定かを調べる</h2>
+<form class="search" action="./" method="get"><input type="text" name="q" placeholder="例: 愛知県名古屋市中川区富田町大字千音寺" required><button class="btn" type="submit">判定する</button></form>
+<p class="src" style="margin-top:8px">国の洪水浸水想定区域（想定最大規模・計画規模・浸水継続時間・家屋倒壊等氾濫想定区域）と名古屋市の内水氾濫ハザードマップ、その学区に出ている避難情報を一度に返します。</p>
+</div>
+<div class="panel">
+<h2 style="margin-top:0">避難先の探し方</h2>
+<ul class="guide">
+<li>命を守るために逃げ込む「指定緊急避難場所」は災害種別ごとに違います。洪水で使える場所を住所から探すには <a href="{{ links.krefuge }}?hazard=flood&ref=kflood-nagoya" target="_blank" rel="noopener">Kurage 避難所マップ（洪水）</a>。</li>
+<li>帰宅困難者向けの退避施設の開設状況は、市の <a href="https://www.city.nagoya.jp/bousaiportal/hazardmap/1013538.html" target="_blank" rel="noopener">帰宅困難者支援サイト</a>（避難所マップにも表示します）。</li>
+<li>避難指示・緊急安全確保の最新は市の <a href="{{ live.source_url }}" target="_blank" rel="noopener">災害情報配信</a> と防災アプリ、すぐメールPlus+で。</li>
+</ul>
+</div>
+{% endblock %}

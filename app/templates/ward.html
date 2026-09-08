@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% set nav = 'nagoya' %}
+{% block title %}名古屋市{{ w.name }}の洪水・内水ハザードマップと避難先｜いまの避難情報（学区別） | {{ site }}{% endblock %}
+{% block desc %}名古屋市{{ w.name }}の洪水・内水の浸水想定と、いま学区に出ている避難情報（警戒レベル）、氾濫時に対象となる河川、避難先の探し方。{{ gakku|length }}学区の一覧つき。住所を入れれば何メートル・何日浸かる想定かが分かります。{% endblock %}
+{% block body %}
+<nav class="src" style="margin-bottom:8px"><a href="../../">住所で判定</a> › <a href="../">名古屋市</a> › {{ w.name }}</nav>
+<h1>名古屋市{{ w.name }}の洪水・内水ハザードマップと避難先</h1>
+<p class="lead">{{ w.name }}の{{ gakku|length }}学区に、いま出ている避難情報と、国の洪水浸水想定・市の内水ハザードマップから見た浸水のおそれ、避難先の探し方をまとめました。</p>
+<div class="panel">
+<h2 style="margin-top:0">いま{{ w.name }}に出ている避難情報（{{ live.fetched_at }} 取得）</h2>
+{% if live.status == 'unavailable' %}<div class="note">市の災害情報配信を取得できませんでした。発令が無いという意味ではありません。<a href="{{ live.source_url }}" target="_blank" rel="noopener">市のページ</a>で確認してください。</div>
+{% elif not walerts %}<div class="card none"><div class="v">現在、{{ w.name }}に警戒レベル3〜5の発令はありません</div><div class="s">出典: <a href="{{ live.source_url }}" target="_blank" rel="noopener">{{ live.source }}</a></div></div>
+{% else %}
+<div class="tscroll"><table class="t"><tr><th>警戒レベル</th><th>河川・種別</th><th>発令</th><th>対象学区</th></tr>
+{% for a in walerts %}<tr><td><span class="badge {{ 'red' if a.level>=4 else 'amber' }}">レベル{{ a.level }}・{{ a.label }}</span></td><td><a href="../../river/{{ a.slug }}/">{{ a.target }}</a></td><td>{{ (a.issued_at or '')[5:16]|replace('T',' ') }}</td><td>{{ '全学区' if '*' in a.gakku else a.gakku|join('、') }}</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+</div>
+<div class="panel">
+<h2 style="margin-top:0">{{ w.name }}の学区一覧（{{ gakku|length }}学区）</h2>
+<div class="grid">
+{% for g in gakku %}{% set lv = gmax.get(g) %}
+<div class="card {{ 'lv3' if lv and lv>=4 else 'lv2' if lv else 'none' }}"><div class="k">{{ g }}学区</div><div class="v" style="font-size:16px">{{ ('警戒レベル' ~ lv) if lv else '発令なし' }}</div></div>
+{% endfor %}
+</div>
+<p class="src">学区の境界は名古屋市「学区線（令和6年11月時点）」（CC BY 4.0）。住所を入れると、その住所の学区と発令を判定に添えます。</p>
+</div>
+<div class="panel">
+<h2 style="margin-top:0">{{ w.name }}の浸水のおそれ（国の洪水浸水想定・市の内水想定）</h2>
+{% if stats %}
+<div class="grid">
+<div class="card {{ 'lv2' if stats.pct_depth05>=20 else 'lv1' if stats.pct_depth05>0 else 'none' }}"><div class="k">想定最大規模で0.5m以上浸水するおそれ</div><div class="v">区の面積の約{{ stats.pct_depth05|round|int }}%</div></div>
+<div class="card {{ 'lv3' if stats.pct_depth3>=10 else 'lv2' if stats.pct_depth3>0 else 'none' }}"><div class="k">3m以上（2階も浸水）のおそれ</div><div class="v">約{{ stats.pct_depth3|round|int }}%</div></div>
+<div class="card {{ 'lv3' if stats.pct_collapse>0 else 'none' }}"><div class="k">家屋倒壊等氾濫想定区域</div><div class="v">約{{ stats.pct_collapse|round|int }}%</div></div>
+<div class="card {{ 'lv1' if stats.pct_naisui>0 else 'none' }}"><div class="k">内水（下水道・水路）の浸水想定あり</div><div class="v">約{{ stats.pct_naisui|round|int }}%</div></div>
+</div>
+<p class="src">区の形に{{ stats.sample_n }}点を打って引いたサンプリング推定（誤差の目安 ±3ポイント）。国の洪水データは水防法で指定された河川の分で、指定外の小河川や堀川など一部の河川は含まれません（0%でも「浸水しない」ではありません）。場所ごとの深さは住所で判定してください。出典: 国土数値情報 洪水浸水想定区域 第4.0版（国土交通省）、名古屋市 内水氾濫ハザードマップ（CC BY 4.0）。</p>
+{% else %}<p class="src">集計を準備中です。住所を入れれば地点ごとの浸水想定はすぐに出ます。</p>{% endif %}
+</div>
+<div class="panel">
+<h2 style="margin-top:0">{{ w.name }}が対象になる河川（氾濫時の発令対象）</h2>
+{% if rivers %}<div class="grid">{% for r in rivers %}<a class="card none" href="../../river/{{ r.slug }}/" style="text-decoration:none"><div class="k">{{ r.target }}</div><div class="s">対象学区: {{ '全学区' if '*' in r.gakku else r.gakku|join('、') }}</div></a>{% endfor %}</div>
+{% else %}<p class="src">市の発令でこの区が対象になった河川はまだ記録されていません。</p>{% endif %}
+</div>
+<div class="panel">
+<h2 style="margin-top:0">避難先を探す・住所で判定する</h2>
+<p><a class="btn" href="{{ links.krefuge }}?q={{ (w.office_address or ('愛知県名古屋市' ~ w.name))|urlencode }}&hazard=flood&ref=kflood-ward" target="_blank" rel="noopener">{{ w.name }}で洪水に使える避難所を探す</a> <a class="btn ghost" href="{{ live.source_url }}" target="_blank" rel="noopener">市の災害情報配信</a></p>
+<form class="search" action="../../" method="get" style="margin-top:10px"><input type="text" name="q" value="愛知県名古屋市{{ w.name }}" required><button class="btn" type="submit">この住所で判定する</button></form>
+<p class="src" style="margin-top:8px">住所を町名まで入れると、想定最大規模の浸水深・継続時間・家屋倒壊区域・内水と、その学区の発令を返します。{% if w.office_address %}区役所: {{ w.office_address }}{% if w.office_tel %}／{{ w.office_tel }}{% endif %}{% endif %}</p>
+</div>
+{% endblock %}
