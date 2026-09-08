@@ -23,6 +23,7 @@
 <div class="step"><b>洪水（河川の氾濫）</b><strong>浸水深と継続時間</strong>想定最大規模・計画規模それぞれの浸水深ランク、水が引くまでの日数、家屋倒壊等氾濫想定区域の区分</div>
 <div class="step"><b>内水（下水道・水路）</b><strong>浸水深と継続時間</strong>河川が氾濫しなくても起きる浸水。自治体のデータで判定（名古屋市版を同梱）</div>
 <div class="step"><b>行動の目安</b><strong>立退きか、上の階か</strong>深さ・継続時間・倒壊区域から、垂直避難で足りるかを示す。世帯条件を足せばマイ・タイムラインに</div>
+<div class="step"><b>いまの避難情報</b><strong>学区に出ている警戒レベル</strong>名古屋市版は住所→学区を引き、市の災害情報配信に出ている警戒レベル・河川を添える（取得できない時はそう言う）</div>
 <div class="step"><b>データ時点</b><strong>いつのデータで判定したか</strong>時点を確認できないデータでは判定しない。未収録と区域外を区別する</div>
 </div>
 </div>
@@ -50,7 +51,16 @@ function render(j){
     h+='<div class="card '+(n.duration?(n.duration.rank>=3?'lv3':'lv2'):'none')+'"><div class="k">浸水継続時間</div><div class="v">'+(n.duration?esc(n.duration.label):'想定なし')+'</div><div class="s">水が引くまでの目安</div></div>';
     h+='<div class="card '+(n.collapse.length?'lv3':'none')+'"><div class="k">家屋倒壊等氾濫想定区域</div><div class="v">'+(n.collapse.length?esc(n.collapse.map(c=>c.label).join('・')):'該当なし')+'</div><div class="s">'+(n.collapse.length?'建物が壊れるおそれ。立退き避難が必要':'')+'</div></div>';
   }
-  h+='</div><h2>内水（下水道・水路からの浸水）</h2><div class="grid">';
+  h+='</div>';
+  var a=j.alert||{};
+  if(a.gakku){
+    h+='<h2>いまの避難情報（'+esc(a.gakku.area)+'）</h2><div class="grid">';
+    if(a.status==='unavailable'){h+='<div class="card"><div class="k">'+esc(a.gakku.ward+a.gakku.name)+'学区</div><div class="v">取得できません</div><div class="s">発令が無いという意味ではありません。<a href="'+esc(a.source_url||'')+'" target="_blank" rel="noopener">市の災害情報配信</a>で確認</div></div>';}
+    else if(a.items&&a.items.length){var t=a.items[0]; h+='<div class="card '+(t.level>=5?'lv3':t.level==4?'lv3':'lv2')+'"><div class="k">'+esc(a.gakku.ward+a.gakku.name)+'学区</div><div class="v">警戒レベル'+t.level+'・'+esc(t.label)+'</div><div class="s">'+esc(a.items.map(function(i){return '['+i.level+'] '+i.label+'（'+i.target+'）'+(i.issued_at?' '+i.issued_at.slice(5,16).replace('T',' '):'')}).join(' / '))+'<br>'+esc(a.fetched_at)+' 取得'+(a.status==='stale'?'（前回値）':'')+' / <a href="'+esc(a.source_url||'')+'" target="_blank" rel="noopener">'+esc(a.source||'出典')+'</a></div></div>';}
+    else {h+='<div class="card none"><div class="k">'+esc(a.gakku.ward+a.gakku.name)+'学区</div><div class="v">発令なし</div><div class="s">市の避難情報（警戒レベル3〜5）は出ていません。'+esc(a.fetched_at)+' 取得 / <a href="'+esc(a.source_url||'')+'" target="_blank" rel="noopener">'+esc(a.source||'出典')+'</a></div></div>';}
+    h+='</div>';
+  }
+  h+='<h2>内水（下水道・水路からの浸水）</h2><div class="grid">';
   if(w.status==='uncovered'){h+='<div class="card"><div class="k">内水データ</div><div class="v">未収録</div><div class="s">この自治体の内水ハザードマップは収録していません</div></div>';}
   else{
     var dr=w.depth_m==null?0:w.depth_m>=3?3:w.depth_m>=0.5?2:1;

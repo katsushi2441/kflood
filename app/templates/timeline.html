@@ -24,6 +24,7 @@ table.tl td ul{margin:0;padding-left:18px}table.tl td li{margin:3px 0}
 <div class="card {{ 'lv3' if n.collapse else 'none' }}"><div class="k">家屋倒壊等氾濫想定区域</div><div class="v">{{ n.collapse|map(attribute='label')|join('・') if n.collapse else '該当なし' }}</div></div>
 <div class="card {{ 'lv2' if w.status=='inside' and w.depth_m>=0.5 else 'lv1' if w.status=='inside' else 'none' }}"><div class="k">内水 浸水深</div><div class="v">{{ (w.depth_label ~ '（' ~ w.depth_m ~ 'm）') if w.status=='inside' else ('未収録' if w.status=='uncovered' else '想定なし') }}</div></div>
 </div>
+{% set al = res.alert %}{% if al and al.items %}<div class="pol" style="margin-top:10px">【いま】{{ al.gakku.ward }}{{ al.gakku.name }}学区に 警戒レベル{{ al.items[0].level }}・{{ al.items[0].label }}（{{ al.items[0].target }}）が出ています<small>{{ al.fetched_at }} 取得（{{ al.source }}）。下の表は平時の計画です。いまは市の避難情報に従って、該当する段の行動を直ちに。</small></div>{% endif %}
 <h2>避難の方針</h2>
 <div class="pol {{ 'ok' if tl.policy.startswith('在宅') }}">{{ tl.policy }}<small>理由: {{ tl.why }}。最終的には市区町村の避難情報に従ってください。</small></div>
 <h2>いつ・何をするか</h2>

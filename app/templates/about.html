@@ -35,6 +35,10 @@
 <p class="src" style="margin-top:10px">内水は国の一括データが無く、自治体ごとに公開されます。他の自治体版を作るには、その自治体の内水浸水想定区域図（Shapefile 等）を <code>scripts/load_nagoya_naisui.py</code> の DATASETS に足して取り込みます。属性名・座標系・出典表記を合わせるだけで、判定と画面はそのまま動きます。名古屋市の元図: <a href="{{ links.nagoya_naisui }}" target="_blank" rel="noopener">内水氾濫ハザードマップ（名古屋市）</a></p>
 </div>
 <div class="panel">
+<h2 style="margin-top:0">いまの避難情報（名古屋市版）</h2>
+<p>名古屋市の避難情報は「河川 × 対象学区」で発令されます。本システムは市の学区線（なごや防災オープンデータカタログ、CC BY 4.0、令和6年11月時点・268学区）で住所を学区に変換し、市の <a href="https://www.city.nagoya.jp/1000103.html" target="_blank" rel="noopener">災害情報配信</a> に出ている警戒レベル・種別・河川・発令時刻の事実だけを取り出して添えます（3分キャッシュ）。市のページを取得できないときは「取得できません」と表示し、「発令なし」とは言いません。表示は本システムの文言で、市の文章は転載しません。最終的な判断は市の避難情報と防災アプリに従ってください。</p>
+</div>
+<div class="panel">
 <h2 style="margin-top:0">判定の手順</h2>
 <ol>
 <li>住所を国土地理院の住所検索APIで座標に変えます（町丁目の代表点になります）</li>

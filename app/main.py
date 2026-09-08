@@ -30,6 +30,7 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
+from app import alerts as live_alerts
 from app.codes import (CATEGORY, COLLAPSE, DEPTH_ACTION, DEPTH_RANK, DURATION_RANK, LONG_DURATION_RANK, RIVER,
                        minutes_label, naisui_band)
 
@@ -110,7 +111,7 @@ def vintage_year(v: str):
 
 def check_point(lon, lat, title=''):
     """1地点の判定。返り値は JSON にそのまま出せる dict。"""
-    out = dict(lon=lon, lat=lat, address=title, national=None, naisui=None, guidance=[], notes=[], datasets=[])
+    out = dict(lon=lon, lat=lat, address=title, national=None, naisui=None, alert=None, guidance=[], notes=[], datasets=[])
     with db() as conn, conn.cursor() as cur:
         pt = 'ST_SetSRID(ST_Point(%s,%s),6668)'
         # 1) 未収録か
@@ -180,8 +181,39 @@ def check_point(lon, lat, title=''):
                 out['datasets'].append(dict(key=k, name=n, vintage=v, attribution=a, note=note))
         out['naisui'] = nai
 
+        # 2.5) いま出ている避難情報（自治体版）。学区が引ける自治体だけ。取得失敗は「発令なし」と区別する。
+        al = dict(status='uncovered', gakku=None, items=[], max_level=None, fetched_at=None, source=None, source_url=None)
+        cur.execute(f'SELECT ward, name, area FROM gakku WHERE ST_Contains(geom, {pt}) LIMIT 1', (lon, lat))
+        gk = cur.fetchone()
+        if gk:
+            al['gakku'] = dict(ward=gk[0], name=gk[1], area=gk[2])
+            data = live_alerts.fetch()
+            al.update(status=data.get('status', 'unavailable'), fetched_at=data.get('fetched_at'), source=data.get('source'), source_url=data.get('source_url'))
+            if data.get('items'):
+                hits = live_alerts.for_gakku(data, gk[0], gk[1])
+                al['items'] = [dict(level=h['level'], label=h['label'], target=h['target'], issued_at=h['issued_at']) for h in hits]
+                al['max_level'] = live_alerts.max_level(hits)
+            cur.execute("SELECT key,name,data_vintage,attribution,note FROM datasets WHERE key='nagoya_gakku'")
+            for k, n, v, a, note in cur.fetchall():
+                out['datasets'].append(dict(key=k, name=n, vintage=v, attribution=a, note=note))
+        out['alert'] = al
+
     # 3) 行動の目安と注意書き
     g, notes = out['guidance'], out['notes']
+    al = out['alert']
+    if al['status'] in ('ok', 'stale') and al['items']:
+        top = al['items'][0]
+        g.append(f"【いま】{al['gakku']['ward']}{al['gakku']['name']}学区に 警戒レベル{top['level']}・{top['label']}（{top['target']}）が出ています"
+                 + (f"（{top['issued_at'][5:16].replace('T', ' ')} 発令）" if top['issued_at'] else '') + '。'
+                 + {5: '災害がすでに起きているか切迫しています。外に出ず、その場で命を守る行動（上階・近くの頑丈な建物の高い場所へ）。',
+                    4: '危険な場所から全員避難。下の浸水想定が深い・長い・倒壊区域なら区域外へ、移動が危険なほど雨が強ければ上階へ。',
+                    3: '高齢者・乳幼児・障害のある方は避難を開始。その他の人も準備を終えて、避難の判断を。'}.get(top['level'], ''))
+        if al['status'] == 'stale':
+            notes.append('避難情報は市のページを取得できず、1時間以内の前回取得値を表示しています。最新は市の災害情報配信で確認してください。')
+    elif al['status'] in ('ok', 'stale') and al['gakku']:
+        g.append(f"【いま】{al['gakku']['ward']}{al['gakku']['name']}学区に、市の避難情報（警戒レベル3〜5）は出ていません（{al['fetched_at']} 取得）。")
+    elif al['status'] == 'unavailable':
+        notes.append('いまの避難情報（市の災害情報配信）を取得できませんでした。発令が無いという意味ではありません。市のページで確認してください。')
     if nat['status'] == 'uncovered':
         notes.append('この地点を含む1次メッシュの洪水データは取り込まれていません。「区域外」という意味ではありません。取り込み状況は healthz で確認できます。')
     else:
@@ -276,7 +308,7 @@ async def api_batch(request: Request, file: UploadFile = File(...)):
     out = io.StringIO()
     w = csv.writer(out)
     w.writerow(['入力', '判定に使った住所', '洪水 想定最大規模 浸水深', '洪水 計画規模 浸水深', '浸水継続時間', '家屋倒壊等氾濫想定区域',
-                '内水 浸水深(m)', '内水 継続時間', '海抜(m)', '判定', '注意', 'データ時点'])
+                '内水 浸水深(m)', '内水 継続時間', '海抜(m)', '判定', '注意', 'データ時点', '学区', 'いまの避難情報'])
     for r in body:
         q = (r[col] if col < len(r) else '').strip()
         if not q:
@@ -292,7 +324,10 @@ async def api_batch(request: Request, file: UploadFile = File(...)):
                     nat['duration']['label'] if nat['duration'] else '', '・'.join(c['label'] for c in nat['collapse']),
                     nai['depth_m'] if nai['depth_m'] is not None else ('' if nai['status'] == 'uncovered' else '想定なし'),
                     nai['minutes_label'] or '', res['elevation']['m'] if res.get('elevation') else '',
-                    status, ' / '.join(res['notes']), ' / '.join(sorted({d['vintage'] for d in res['datasets']}))])
+                    status, ' / '.join(res['notes']), ' / '.join(sorted({d['vintage'] for d in res['datasets']})),
+                    (res['alert']['gakku']['ward'] + res['alert']['gakku']['name']) if res['alert'].get('gakku') else '',
+                    ('; '.join(f"レベル{i['level']} {i['label']}（{i['target']}）" for i in res['alert']['items']) if res['alert']['items'] else
+                     ('発令なし' if res['alert']['status'] in ('ok', 'stale') and res['alert'].get('gakku') else ('取得不可' if res['alert']['status'] == 'unavailable' else '')))])
         time.sleep(0.2)   # 地理院APIへの負荷を抑える
     data = ('﻿' + out.getvalue()).encode('utf-8')
     fn = f'kflood_batch_{datetime.now():%Y%m%d_%H%M}.csv'
@@ -313,8 +348,12 @@ def healthz():
         muni = [dict(key=k, vintage=v, loaded=str(d)) for k, v, d in cur.fetchall()]
         cur.execute("SELECT min(data_vintage), max(loaded_at)::date FROM datasets WHERE key LIKE 'A31%'")
         v, d = cur.fetchone()
+        cur.execute('SELECT count(*) FROM gakku')
+        gk = cur.fetchone()[0]
+    a = live_alerts.fetch()
     return dict(ok=True, flood_meshes=meshes, flood_polygons=polys, flood_vintage=v, flood_loaded=str(d) if d else None,
-                naisui_coverage=cov, municipal_datasets=muni)
+                naisui_coverage=cov, municipal_datasets=muni, gakku=gk,
+                alerts=dict(status=a.get('status'), items=len(a.get('items', [])), fetched_at=a.get('fetched_at'), source=a.get('source_url')))
 
 
 def page(request: Request, name: str, **kw):
