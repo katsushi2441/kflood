@@ -48,7 +48,7 @@ LINKS = {
     'nagoya_naisui': 'https://www.city.nagoya.jp/bosaikikikanri/page/0000154015.html',
     'khazard': 'https://kurage.exbridge.jp/khazard.php/',
     'ktsunami': 'https://kurage.exbridge.jp/ktsunami.php/',
-    'khinan': 'https://kurage.exbridge.jp/khinan.php/',
+    'krefuge': 'https://kurage.exbridge.jp/krefuge.php/',
 }
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 templates = Jinja2Templates(directory=os.path.join(ROOT, 'app', 'templates'))
