@@ -37,7 +37,7 @@
 | --- | --- |
 | ジオコーディング | 国土地理院 AddressSearch API（無料・キー不要） |
 | 判定 | PostGIS（kflood-db :55434）ST_Contains |
-| データ | A31 第4.0版 全国（GeoJSON zip 151ファイル・約9.7GB → PostGIS 約2,100万面・約25GB）＋ 名古屋市内水（Shapefile 2本・約830万セル） |
+| データ | A31 第4.0版 全国（GeoJSON zip 151ファイル・約9.7GB → PostGIS 約2,100万面・約20GB）＋ 名古屋市内水（Shapefile 2本・約830万セル） |
 | 常駐 | systemd user unit `kflood.service` :18386 |
 | 公開 | heteml の `kflood.php` から透過プロキシ（`scripts/deploy_proxy.sh`） |
 
