@@ -52,3 +52,14 @@ def test_kaijo_notice_is_not_an_active_alert():
     kaijo = [n for n in d['notes'] if n.get('kind') == '解除']
     assert kaijo and kaijo[0]['target'] == '矢田川'
     assert kaijo[0]['issued_at'] == '2026-09-09T02:45:00'
+
+
+def test_gakku_levels_from_live_items():
+    """学区→現在の最大レベル（区の全学区は '*'）。地図の学区レイヤの色に使う。"""
+    from app import main
+    live = {'items': [
+        {'level': 4, 'wards': {'天白区': ['植田', '大坪'], '熱田区': ['*']}},
+        {'level': 5, 'wards': {'天白区': ['植田']}},
+    ]}
+    lv = main.gakku_levels(live)
+    assert lv[('天白区', '植田')] == 5 and lv[('天白区', '大坪')] == 4 and lv[('熱田区', '*')] == 4

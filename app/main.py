@@ -27,7 +27,7 @@ from datetime import date, datetime
 import psycopg2
 import requests
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from app import alerts as live_alerts
@@ -178,7 +178,10 @@ def check_point(lon, lat, title=''):
         # 2) 内水（自治体版）。収録自治体名が住所に含まれるときだけ判定する。
         cur.execute('SELECT area, dataset_keys FROM naisui_coverage')
         cov = cur.fetchall()
-        area = next((a for a, _ in cov if a and a in (title or '')), None)
+        # 収録範囲は座標で決める（地図クリックのように住所文字列が無い場合も判定できる）。念のため住所文字列でも補う
+        cur.execute(f'SELECT area FROM naisui_coverage WHERE ST_Contains(geom, {pt}) LIMIT 1', (lon, lat))
+        row = cur.fetchone()
+        area = row[0] if row else next((a for a, _ in cov if a and a in (title or '')), None)
         nai = dict(status='uncovered', area=None, depth_m=None, depth_label=None, minutes=None, minutes_label=None)
         if area:
             nai['area'] = area
@@ -286,10 +289,18 @@ def ensure_ready():
 
 
 @app.get('/api/check')
-def api_check(request: Request, q: str = ''):
+def api_check(request: Request, q: str = '', lat: float = None, lon: float = None):
     if limited(client_ip(request)):
         raise HTTPException(429, '短時間に多くの判定が行われました。1分ほど待ってから再度お試しください')
     ensure_ready()
+    if lat is not None and lon is not None:
+        # 地図をクリックした地点（住所検索なし）
+        if not (20 < lat < 46 and 122 < lon < 154):
+            raise HTTPException(400, '緯度経度が日本の範囲外です')
+        res = check_point(lon, lat, title=f'地図で指定した地点（{lat:.5f}, {lon:.5f}）')
+        res['query'] = ''
+        res['elevation'] = elevation(lon, lat)
+        return JSONResponse(res, headers={'Cache-Control': 'no-store'})
     return JSONResponse(check_query(q), headers={'Cache-Control': 'no-store'})
 
 
@@ -347,6 +358,76 @@ async def api_batch(request: Request, file: UploadFile = File(...)):
     fn = f'kflood_batch_{datetime.now():%Y%m%d_%H%M}.csv'
     return StreamingResponse(io.BytesIO(data), media_type='text/csv; charset=utf-8',
                              headers={'Content-Disposition': f'attachment; filename="{fn}"', 'Cache-Control': 'no-store'})
+
+
+
+# ---- 地図（MapLibre）用: ベクタータイルと学区GeoJSON -------------------------------
+TILE_DIR = os.path.join(ROOT, 'data', 'tiles')   # 生成したタイルはディスクに残す（初回だけ PostGIS を叩く）
+TILE_LAYERS = {
+    # 名古屋市 内水氾濫ハザードマップ（CC BY）: 5mセルを深さ区分にして配信
+    'naisui': dict(minz=12, maxz=17, sql="""SELECT ST_AsMVT(q, 'naisui', 4096, 'geom') FROM (
+        SELECT CASE WHEN depth_m < 0.3 THEN 1 WHEN depth_m < 0.5 THEN 2 WHEN depth_m < 1 THEN 3
+                    WHEN depth_m < 2 THEN 4 WHEN depth_m < 3 THEN 5 ELSE 6 END AS cls,
+               ST_AsMVTGeom(ST_Transform(geom, 3857), ST_TileEnvelope(%(z)s, %(x)s, %(y)s), 4096, 64, true) AS geom
+        FROM naisui_depth WHERE depth_m > 0 AND geom && ST_Transform(ST_TileEnvelope(%(z)s, %(x)s, %(y)s), 6668)) q"""),
+    # 国土数値情報 A31（2022年度）想定最大規模: 当社の判定に使っている元データ（国ポータルとの差を見るため）
+    'a31': dict(minz=10, maxz=17, sql="""SELECT ST_AsMVT(q, 'a31', 4096, 'geom') FROM (
+        SELECT rank, ST_AsMVTGeom(ST_Transform(geom, 3857), ST_TileEnvelope(%(z)s, %(x)s, %(y)s), 4096, 64, true) AS geom
+        FROM flood WHERE category = 20 AND geom && ST_Transform(ST_TileEnvelope(%(z)s, %(x)s, %(y)s), 6668)) q"""),
+}
+
+
+@app.get('/tiles/{layer}/{z}/{x}/{y}.pbf')
+def vector_tile(layer: str, z: int, x: int, y: int):
+    L = TILE_LAYERS.get(layer)
+    if not L:
+        raise HTTPException(404, 'そのレイヤはありません')
+    hdr = {'Cache-Control': 'public, max-age=86400'}
+    if z < L['minz'] or z > L['maxz'] or x < 0 or y < 0 or x >= 2 ** z or y >= 2 ** z:
+        return Response(status_code=204, headers=hdr)
+    path = os.path.join(TILE_DIR, layer, str(z), str(x), f'{y}.pbf')
+    if os.path.exists(path):
+        data = open(path, 'rb').read()
+    else:
+        with db() as conn, conn.cursor() as cur:
+            cur.execute(L['sql'], dict(z=z, x=x, y=y))
+            row = cur.fetchone()
+        data = bytes(row[0]) if row and row[0] else b''
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'wb') as f:
+            f.write(data)
+    if not data:
+        return Response(status_code=204, headers=hdr)
+    return Response(content=data, media_type='application/vnd.mapbox-vector-tile', headers=hdr)
+
+
+def gakku_levels(live: dict) -> dict:
+    """学区ごとの現在の最大警戒レベル。(区, 学区名) → level。区の全学区なら (区, '*')。"""
+    lv = {}
+    for it in (live.get('items') or []):
+        for w, gs in (it.get('wards') or {}).items():
+            for g in gs:
+                lv[(w, g)] = max(lv.get((w, g), 0), it['level'])
+    return lv
+
+
+@app.get('/api/gakku.geojson')
+def gakku_geojson():
+    live = get_live()
+    lv = gakku_levels(live)
+    with db() as conn, conn.cursor() as cur:
+        cur.execute("SELECT ward, name, ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, 0.00015)) FROM gakku ORDER BY ward, name")
+        feats = []
+        for w, n, g in cur.fetchall():
+            level = max(lv.get((w, n), 0), lv.get((w, '*'), 0))
+            feats.append(dict(type='Feature', properties=dict(ward=w, name=n, level=level), geometry=json.loads(g)))
+    return JSONResponse(dict(type='FeatureCollection', features=feats, fetched_at=live.get('fetched_at'), status=live.get('status')),
+                        headers={'Cache-Control': 'public, max-age=180'})
+
+
+@app.get('/map/', response_class=HTMLResponse)
+def map_page(request: Request, lat: float = None, lon: float = None, q: str = ''):
+    return page(request, 'map.html', lat=lat, lon=lon, q=q[:100])
 
 
 @app.get('/healthz')
@@ -552,7 +633,7 @@ def river_page(request: Request, slug: str):
 @app.get('/sitemap.xml')
 def sitemap(request: Request):
     base = 'https://kurage.exbridge.jp/kflood.php/'
-    urls = ['', 'nagoya/', 'timeline', 'batch', 'about'] + [f"nagoya/{w['slug']}/" for w in nagoya.wards()] + [f"river/{r['slug']}/" for r in nagoya.rivers()]
+    urls = ['', 'nagoya/', 'map/', 'timeline', 'batch', 'about'] + [f"nagoya/{w['slug']}/" for w in nagoya.wards()] + [f"river/{r['slug']}/" for r in nagoya.rivers()]
     body = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + ''.join(f'<url><loc>{base}{u}</loc></url>' for u in urls) + '</urlset>'
     return PlainTextResponse(body, media_type='application/xml')
 

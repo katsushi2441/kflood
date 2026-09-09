@@ -48,6 +48,7 @@ function go(){
 function render(j){
   var n=j.national, w=j.naisui, h='';
   h+='<div class="panel"><div class="src">判定に使った住所: <b>'+esc(j.address)+'</b>（'+j.lat.toFixed(5)+', '+j.lon.toFixed(5)+'）'+(j.elevation?' 海抜 <b>'+j.elevation.m+'m</b>':'')+' / '+esc(j.checked_at)+'</div>';
+  h+='<p style="margin:8px 0 0"><a class="btn ghost" href="map/?lat='+j.lat+'&lon='+j.lon+'&q='+encodeURIComponent(j.address||'')+'">この地点を地図で見る（洪水・内水・学区の発令）</a></p>';
   h+='<h2 style="margin-top:12px">洪水（河川の氾濫）</h2><div class="grid">';
   if(n.status==='uncovered'){h+='<div class="card"><div class="k">洪水データ</div><div class="v">未収録</div><div class="s">このメッシュは取り込まれていません（区域外ではありません）</div></div>';}
   else{
