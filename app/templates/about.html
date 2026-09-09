@@ -16,8 +16,8 @@
 <div class="panel">
 <h2 style="margin-top:0">洪水（全国）</h2>
 <div class="tscroll"><table class="t">
-<tr><th>出典</th><td>国土数値情報 洪水浸水想定区域（1次メッシュ単位）データ 第4.0版／国土交通省 <a href="https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-A31-v4_0.html" target="_blank" rel="noopener">配布ページ</a></td></tr>
-<tr><th>データ作成年度</th><td>{{ a31_vintage or '未取り込み' }}</td></tr>
+<tr><th>出典</th><td>国土数値情報 洪水浸水想定区域（1次メッシュ単位）データ／国土交通省 <a href="{{ a31_page }}" target="_blank" rel="noopener">配布ページ</a>。毎年5月に前年度版へ更新されるので、当社も年1回入れ替えます</td></tr>
+<tr><th>データ基準年度（版）</th><td>{{ a31_vintage or '未取り込み' }}</td></tr>
 <tr><th>収録</th><td>1次メッシュ {{ meshes }} 件（{{ a31|length }} ファイル）。洪水予報河川・水位周知河川と、その他の河川の両方</td></tr>
 <tr><th>内容</th><td>計画規模・想定最大規模の浸水深ランク、浸水継続時間ランク、家屋倒壊等氾濫想定区域（氾濫流・河岸侵食）</td></tr>
 <tr><th>対象</th><td>水防法で指定された洪水予報河川・水位周知河川など、河川管理者が図面を提供した河川。指定外の小河川は含まれません</td></tr>

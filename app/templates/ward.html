@@ -34,7 +34,7 @@
 <div class="card {{ 'lv3' if stats.pct_collapse>0 else 'none' }}"><div class="k">家屋倒壊等氾濫想定区域</div><div class="v">約{{ stats.pct_collapse|round|int }}%</div></div>
 <div class="card {{ 'lv1' if stats.pct_naisui>0 else 'none' }}"><div class="k">内水（下水道・水路）の浸水想定あり</div><div class="v">約{{ stats.pct_naisui|round|int }}%</div></div>
 </div>
-<p class="src">区の形に{{ stats.sample_n }}点を打って引いたサンプリング推定（誤差の目安 ±3ポイント）。国の洪水データは水防法で指定された河川の分で、指定外の小河川や堀川など一部の河川は含まれません（0%でも「浸水しない」ではありません）。場所ごとの深さは住所で判定してください。出典: 国土数値情報 洪水浸水想定区域 第4.0版（国土交通省）、名古屋市 内水氾濫ハザードマップ（CC BY 4.0）。</p>
+<p class="src">区の形に{{ stats.sample_n }}点を打って引いたサンプリング推定（誤差の目安 ±3ポイント）。国の洪水データは水防法で指定された河川の分で、指定外の小河川や堀川など一部の河川は含まれません（0%でも「浸水しない」ではありません）。場所ごとの深さは住所で判定してください。出典: 国土数値情報 洪水浸水想定区域（1次メッシュ単位）{{ a31_vintage_short }}版（国土交通省）、名古屋市 内水氾濫ハザードマップ（CC BY 4.0）。</p>
 {% else %}<p class="src">集計を準備中です。住所を入れれば地点ごとの浸水想定はすぐに出ます。</p>{% endif %}
 </div>
 <div class="panel">

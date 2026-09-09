@@ -38,15 +38,19 @@ python3 -m venv .venv
 まず名古屋周辺の1次メッシュで試すことをおすすめします（5236 = 名古屋市の大部分、5237 = 三河）。
 
 ```bash
-.venv/bin/python scripts/load_a31.py 5236 5237
+.venv/bin/python scripts/load_a31b.py 5236 5237
 .venv/bin/python scripts/load_nagoya_naisui.py
 ```
 
 全国分は次のとおりです。回線にもよりますが 1〜2 時間かかります。途中で止めても再実行すれば続きから入ります。
 
 ```bash
-.venv/bin/python scripts/load_a31.py all
+.venv/bin/python scripts/load_a31b.py all
 ```
+
+国の洪水データは、国土数値情報「洪水浸水想定区域（1次メッシュ単位）」の **A31b（毎年5月に前年度版へ更新）** を使います。
+`scripts/load_a31.py` は旧識別子 A31 第4.0版（2022年度で更新終了）用で、過去の取り込みを再現するとき以外は使いません。
+取り込んだ版は `.env` の `KFLOOD_A31_PREFIX`（A31b 2025年度版なら `A31b-25`）で画面と判定に伝えます。
 
 取り込みが終わると、使ったデータの出典と時点が `datasets` 表に、取り込んだ1次メッシュが `meshes` 表に記録されます。
 **この記録が無い場所は「未収録」と返し、「区域外」とは言いません。**
@@ -101,10 +105,26 @@ define("KFLOOD_BACKEND", "http://あなたのサーバー:18386");
 - 出典表示（地理院タイル／ハザードマップポータルサイト／自治体データのライセンス）は地図の右下に自動で出ます。消さないでください。
 - 地図をクリックしたときの判定は `/api/check?lat=&lon=` を使います。住所判定と同じレート制限がかかります。
 
-## 8. データの更新
+## 8. データの更新（年1回・5月）
 
-国土数値情報は年度ごとに版が上がります。`scripts/load_a31.py all --force` で入れ直せます。
-名古屋市の内水は市が改定したら `scripts/load_nagoya_naisui.py --force` を実行してください。
+国土数値情報 A31b は毎年5月に前年度版へ更新されます（2026年5月に2025年度版）。稼働中の判定を止めずに入れ替える手順です。
+
+1. `scripts/load_a31b.py` の `BASE`・`LIST_PAGE`・`VINTAGE`・キー接頭辞を新しい版（例 `A31b-26`）に合わせる。
+2. 空の作業表を作って、そこへ全国分を入れる（本番の `flood` 表はそのまま）。
+
+   ```bash
+   docker exec -i kflood-db psql -U postgres -d kflood -c "CREATE TABLE IF NOT EXISTS flood_new (LIKE flood INCLUDING ALL);"
+   KFLOOD_FLOOD_TABLE=flood_new .venv/bin/python scripts/load_a31b.py all --force
+   ```
+
+3. 入れ替える（表の名前を付け替え、旧版の `datasets` 行を消し、タイルのキャッシュを捨てる）。
+
+   ```bash
+   .venv/bin/python scripts/swap_a31.py --old-prefix A31-22 --new-prefix A31b-25
+   ```
+
+4. `.env` の `KFLOOD_A31_PREFIX` を新しい接頭辞にして `systemctl --user restart kflood.service`。`/about` の「データ基準年度（版）」で確認する。
+5. 名古屋市の内水は市が改定したら `scripts/load_nagoya_naisui.py --force` を実行してください。
 
 ## 9. 他の自治体の内水を足す
 

@@ -14,7 +14,9 @@
   ジオコーディング: 国土地理院 AddressSearch API（無料・キー不要）
   海抜            : 国土地理院 標高API
   判定            : PostGIS（kflood-db）ST_Contains
-  データ          : 国土数値情報 A31 第4.0版（全国・洪水）＋ 名古屋市 内水氾濫ハザードマップ（CC BY）
+  データ          : 国土数値情報 洪水浸水想定区域（1次メッシュ単位）全国。旧識別子 A31 第4.0版(2022年度)は後継 A31b(毎年5月更新)へ
+                    移行する。どの版を使っているかは .env の KFLOOD_A31_PREFIX（datasets.key の接頭辞）で決める
+                    ＋ 名古屋市 内水氾濫ハザードマップ（CC BY）
 """
 import csv
 import io
@@ -42,6 +44,12 @@ GSI = 'https://msearch.gsi.go.jp/address-search/AddressSearch'
 GSI_ELEV = 'https://cyberjapandata2.gsi.go.jp/general/dem/scripts/getelevation.php'
 UA = {'User-Agent': 'kflood/1.0 (kurage.exbridge.jp)'}
 STALE_YEARS = 6       # 国のデータ作成年度からこれ以上経っていたら注意書き
+# 国の洪水データの版。datasets.key の接頭辞（A31-22 = 旧A31 第4.0版 2022年度 / A31b-25 = A31b 2025年度版）。
+# 新しい版を flood 表に入れ替えたら .env で切り替える（scripts/load_a31b.py と docs/SETUP.md）
+A31_PREFIX = os.environ.get('KFLOOD_A31_PREFIX', 'A31-22')
+A31_PAGES = {'A31-22': 'https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-A31-v4_0.html',
+             'A31b-25': 'https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-A31b-2025.html'}
+A31_PAGE = os.environ.get('KFLOOD_A31_PAGE', A31_PAGES.get(A31_PREFIX, 'https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-A31b-2025.html'))
 NEAR_M = 250          # これより近くに区域があれば「区域外」と言い切らない
 BATCH_MAX = 300       # CSV一括判定の上限行数（地理院APIへの負荷を抑える）
 SITE = os.environ.get('KFLOOD_SITE_NAME', 'Kurage 洪水・内水ハザードマップ')
@@ -167,7 +175,7 @@ def check_point(lon, lat, title=''):
                 nat['nearest_m'] = round(r2[0]) if r2 else None
             # 使ったデータの時点（該当が無ければそのメッシュの datasets）
             if not keys:
-                cur.execute('SELECT key FROM datasets WHERE key LIKE %s', (f'A31-22_%_{row[0]}',))
+                cur.execute('SELECT key FROM datasets WHERE key LIKE %s', (f'{A31_PREFIX}_%_{row[0]}',))
                 keys = {k[0] for k in cur.fetchall()}
             if keys:
                 cur.execute('SELECT key,name,data_vintage,attribution,note FROM datasets WHERE key = ANY(%s) ORDER BY key', (sorted(keys),))
@@ -370,7 +378,7 @@ TILE_LAYERS = {
                     WHEN depth_m < 2 THEN 4 WHEN depth_m < 3 THEN 5 ELSE 6 END AS cls,
                ST_AsMVTGeom(ST_Transform(geom, 3857), ST_TileEnvelope(%(z)s, %(x)s, %(y)s), 4096, 64, true) AS geom
         FROM naisui_depth WHERE depth_m > 0 AND geom && ST_Transform(ST_TileEnvelope(%(z)s, %(x)s, %(y)s), 6668)) q"""),
-    # 国土数値情報 A31（2022年度）想定最大規模: 当社の判定に使っている元データ（国ポータルとの差を見るため）
+    # 国土数値情報（A31/A31b）想定最大規模: 当社の判定に使っている元データ（国ポータルとの差を見るため）
     'a31': dict(minz=10, maxz=17, sql="""SELECT ST_AsMVT(q, 'a31', 4096, 'geom') FROM (
         SELECT rank, ST_AsMVTGeom(ST_Transform(geom, 3857), ST_TileEnvelope(%(z)s, %(x)s, %(y)s), 4096, 64, true) AS geom
         FROM flood WHERE category = 20 AND geom && ST_Transform(ST_TileEnvelope(%(z)s, %(x)s, %(y)s), 6668)) q"""),
@@ -441,7 +449,7 @@ def healthz():
         cov = [dict(area=a, datasets=k) for a, k in cur.fetchall()]
         cur.execute("SELECT key, data_vintage, loaded_at::date FROM datasets WHERE key NOT LIKE 'A31%' ORDER BY key")
         muni = [dict(key=k, vintage=v, loaded=str(d)) for k, v, d in cur.fetchall()]
-        cur.execute("SELECT min(data_vintage), max(loaded_at)::date FROM datasets WHERE key LIKE 'A31%'")
+        cur.execute("SELECT min(data_vintage), max(loaded_at)::date FROM datasets WHERE key LIKE %s", (A31_PREFIX + '_%',))
         v, d = cur.fetchone()
         cur.execute('SELECT count(*) FROM gakku')
         gk = cur.fetchone()[0]
@@ -451,9 +459,31 @@ def healthz():
                 alerts=dict(status=a.get('status'), items=len(a.get('items', [])), fetched_at=a.get('fetched_at'), source=a.get('source_url')))
 
 
+_a31v = {'t': 0, 'v': None}
+
+
+def a31_vintage():
+    """flood 表に入っている国の洪水データの時点（datasets.data_vintage）。表示用。10分キャッシュ"""
+    if time.time() - _a31v['t'] > 600:
+        try:
+            with db() as conn, conn.cursor() as cur:
+                cur.execute("SELECT min(data_vintage) FROM datasets WHERE key LIKE %s", (A31_PREFIX + '_%',))
+                r = cur.fetchone()
+                _a31v.update(t=time.time(), v=(r[0] if r else None))
+        except Exception:
+            _a31v['t'] = time.time()
+    return _a31v['v']
+
+
+def a31_vintage_short():
+    m = re.search(r'\d{4}年度', a31_vintage() or '')
+    return m.group(0) if m else (a31_vintage() or '')
+
+
 def page(request: Request, name: str, **kw):
     depth = max(0, request.url.path.strip('/').count('/') + (1 if request.url.path.strip('/') and request.url.path.endswith('/') else 0))
-    kw.update(site=SITE, links=LINKS, year=date.today().year, root='../' * depth if depth else './')
+    kw.update(site=SITE, links=LINKS, year=date.today().year, root='../' * depth if depth else './',
+              a31_vintage=a31_vintage(), a31_vintage_short=a31_vintage_short(), a31_page=A31_PAGE)
     return templates.TemplateResponse(request, name, kw)
 
 
@@ -469,10 +499,9 @@ def about(request: Request):
         rows = cur.fetchall()
         cur.execute('SELECT count(*) FROM meshes')
         meshes = cur.fetchone()[0]
-    a31 = [r for r in rows if r[0].startswith('A31')]
+    a31 = [r for r in rows if r[0].startswith(A31_PREFIX + '_')]
     muni = [r for r in rows if not r[0].startswith('A31')]
-    return page(request, 'about.html', a31=a31, muni=muni, meshes=meshes,
-                                                        a31_vintage=(a31[0][2] if a31 else None))
+    return page(request, 'about.html', a31=a31, muni=muni, meshes=meshes)
 
 
 @app.get('/batch', response_class=HTMLResponse)

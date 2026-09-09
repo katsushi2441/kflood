@@ -36,7 +36,7 @@
     <label><input type="checkbox" data-layer="gakku" checked> <span class="chip" style="background:#e7c9b8"></span>学区といまの避難情報</label>
     <label><input type="checkbox" data-layer="portal_keizoku"> <span class="chip" style="background:#a0d2ff"></span>浸水継続時間（国のポータル）</label>
     <label><input type="checkbox" data-layer="portal_kaoku"> <span class="chip" style="background:#d55"></span>家屋倒壊等氾濫想定区域（国のポータル）</label>
-    <label><input type="checkbox" data-layer="a31"> <span class="chip" style="background:#ffd8c0;border-style:dashed"></span>国土数値情報 2022年度版（当社判定の元データ。最新との差が見える）</label>
+    <label><input type="checkbox" data-layer="a31"> <span class="chip" style="background:#ffd8c0;border-style:dashed"></span>国土数値情報 {{ a31_vintage_short }}版（当社判定の元データ。最新との差が見える）</label>
     <div class="legend" style="margin-top:8px">
       <div><span class="chip" style="background:#f7f5a9"></span>洪水 0.5m未満</div><div><span class="chip" style="background:#ffd8c0"></span>0.5〜3m</div>
       <div><span class="chip" style="background:#ffb7b7"></span>3〜5m</div><div><span class="chip" style="background:#ff9191"></span>5〜10m</div>
@@ -88,7 +88,7 @@ function renderRes(j){
   var h='<div class="row"><div class="k">地点</div><div class="v" style="font-size:14px">'+esc(j.address)+'</div><div class="src">'+(j.elevation?'海抜 '+esc(j.elevation.m)+'m ／ ':'')+j.lat.toFixed(5)+', '+j.lon.toFixed(5)+'</div></div>';
   if(n.status==='uncovered'){h+='<div class="row"><div class="k">洪水（国土数値情報）</div><div class="v">未収録</div></div>'}
   else{
-    h+='<div class="row"><div class="k">洪水 想定最大規模の浸水深（国土数値情報 2022年度）</div><div class="v">'+(n.max?esc(n.max.label):'区域外')+'</div>'+(n.nearest_m?'<div class="src">最寄りの区域まで約'+n.nearest_m+'m</div>':'')+'</div>';
+    h+='<div class="row"><div class="k">洪水 想定最大規模の浸水深（国土数値情報 {{ a31_vintage_short }}）</div><div class="v">'+(n.max?esc(n.max.label):'区域外')+'</div>'+(n.nearest_m?'<div class="src">最寄りの区域まで約'+n.nearest_m+'m</div>':'')+'</div>';
     h+='<div class="row"><div class="k">浸水継続時間</div><div class="v">'+(n.duration?esc(n.duration.label):'想定なし')+'</div></div>';
     h+='<div class="row"><div class="k">家屋倒壊等氾濫想定区域</div><div class="v">'+((n.collapse&&n.collapse.length)?esc(n.collapse.map(function(c){return c.label}).join('・')):'区域外')+'</div></div>';
   }
