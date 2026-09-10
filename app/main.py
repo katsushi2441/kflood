@@ -53,6 +53,7 @@ A31_PAGE = os.environ.get('KFLOOD_A31_PAGE', A31_PAGES.get(A31_PREFIX, 'https://
 NEAR_M = 250          # これより近くに区域があれば「区域外」と言い切らない
 BATCH_MAX = 300       # CSV一括判定の上限行数（地理院APIへの負荷を抑える）
 SITE = os.environ.get('KFLOOD_SITE_NAME', 'Kurage 洪水・内水ハザードマップ')
+PUBLIC_BASE = os.environ.get('KFLOOD_PUBLIC_BASE', 'https://kurage.exbridge.jp/kflood.php').rstrip('/')
 LINKS = {
     'portal': 'https://disaportal.gsi.go.jp/maps/',
     'nagoya_naisui': 'https://www.city.nagoya.jp/bosaikikikanri/page/0000154015.html',
@@ -480,10 +481,54 @@ def a31_vintage_short():
     return m.group(0) if m else (a31_vintage() or '')
 
 
+FAQ = [
+    ("洪水ハザードマップと内水ハザードマップは何が違うのですか",
+     "洪水は河川が氾濫して水が来る想定、内水は下水道や水路が雨をさばききれずに街の中で溢れる想定です。"
+     "別々の図で公開されているため、片方だけ見て「うちは大丈夫」と判断してしまうことがあります。"
+     "このサイトは住所ひとつで両方を同時に照らします。"),
+    ("浸水深が何メートルなら、上の階へ逃げれば足りますか",
+     "浸水深3m以上は2階まで浸かる想定なので垂直避難では足りません。家屋倒壊等氾濫想定区域（氾濫流・河岸侵食）"
+     "や、浸水が3日以上続く場所も同様で、立退き避難が必要です。このサイトはその判断の目安まで返します。"),
+    ("データはいつ時点のものですか",
+     "洪水は国土数値情報の洪水浸水想定区域（1次メッシュ単位）で、毎年5月に更新されます。判定結果には"
+     "必ずデータ時点を添えます。時点を確認できないデータでは判定そのものを行いません。"),
+    ("データを取り込んでいない場所はどう表示されますか",
+     "「区域外」とは言わず「この地点のデータは取り込まれていません」と返します。未収録と区域外を混同すると"
+     "危険な場所を安全と誤解させるためです。"),
+]
+
+
+def jsonld_for(path: str) -> str:
+    """構造化データ。AI検索・検索エンジンに「何を答えるサイトか」を機械可読で渡す。"""
+    graph = [{
+        "@type": "WebSite",
+        "@id": PUBLIC_BASE + "/#website",
+        "name": SITE,
+        "url": PUBLIC_BASE + "/",
+        "inLanguage": "ja",
+        "publisher": {"@type": "Organization", "name": "株式会社エクスブリッジ", "url": "https://exbridge.jp/"},
+        "potentialAction": {
+            "@type": "SearchAction",
+            "target": {"@type": "EntryPoint", "urlTemplate": PUBLIC_BASE + "/?q={search_term_string}"},
+            "query-input": "required name=search_term_string",
+        },
+    }]
+    if path in ('/', '/about'):
+        graph.append({"@type": "FAQPage", "mainEntity": [
+            {"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in FAQ]})
+    if path != '/':
+        graph.append({"@type": "BreadcrumbList", "itemListElement": [
+            {"@type": "ListItem", "position": 1, "name": SITE, "item": PUBLIC_BASE + "/"},
+            {"@type": "ListItem", "position": 2, "name": path.strip('/'), "item": PUBLIC_BASE + path}]})
+    return json.dumps({"@context": "https://schema.org", "@graph": graph}, ensure_ascii=False)
+
+
 def page(request: Request, name: str, **kw):
     depth = max(0, request.url.path.strip('/').count('/') + (1 if request.url.path.strip('/') and request.url.path.endswith('/') else 0))
     kw.update(site=SITE, links=LINKS, year=date.today().year, root='../' * depth if depth else './',
-              a31_vintage=a31_vintage(), a31_vintage_short=a31_vintage_short(), a31_page=A31_PAGE)
+              a31_vintage=a31_vintage(), a31_vintage_short=a31_vintage_short(), a31_page=A31_PAGE,
+              public_base=PUBLIC_BASE, canonical=PUBLIC_BASE + request.url.path,
+              jsonld=jsonld_for(request.url.path))
     return templates.TemplateResponse(request, name, kw)
 
 
@@ -665,6 +710,62 @@ def sitemap(request: Request):
     urls = ['', 'nagoya/', 'map/', 'timeline', 'batch', 'about'] + [f"nagoya/{w['slug']}/" for w in nagoya.wards()] + [f"river/{r['slug']}/" for r in nagoya.rivers()]
     body = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + ''.join(f'<url><loc>{base}{u}</loc></url>' for u in urls) + '</urlset>'
     return PlainTextResponse(body, media_type='application/xml')
+
+
+@app.get('/llms.txt', response_class=PlainTextResponse)
+def llms():
+    """AI検索（ChatGPT/Claude/Perplexity 等）向けの要約。何を答えられる道具かを最初に書く。"""
+    with db() as conn, conn.cursor() as cur:
+        cur.execute("SELECT name,data_vintage,attribution FROM datasets ORDER BY key NOT LIKE 'A31%%', key")
+        rows = cur.fetchall()
+        cur.execute('SELECT count(*) FROM meshes')
+        meshes = cur.fetchone()[0]
+    ds = "\n".join(f"- {n}（データ時点 {v}／{a}）" for n, v, a in rows)
+    wards = "、".join(w['name'] for w in nagoya.wards())
+    rivers = "、".join(r['target'] for r in nagoya.rivers())
+    return f"""# {SITE}
+
+> 住所を入れると、その地点が洪水（河川の氾濫）で何メートル・何日浸かる想定か、内水（下水道・水路からの
+> 浸水）で何メートル浸かる想定かを、データ時点と出典つきで返すサイト。家屋倒壊等氾濫想定区域（氾濫流・
+> 河岸侵食）まで判定し、立退き避難か垂直避難かの目安を返す。
+
+## 洪水と内水の違い（よく混同される）
+- 洪水: 河川が氾濫して水が来る想定。国が指定した洪水予報河川・水位周知河川が対象。
+- 内水: 下水道や水路が雨をさばききれず、街の中で溢れる想定。自治体ごとに別の図で公開される。
+- 別々の図なので片方だけ見て安全と判断されやすい。このサイトは住所ひとつで両方を同時に照らす。
+
+## 収録データ
+{ds}
+- 収録メッシュ数: {meshes}
+- 取り込んでいない場所は「区域外」ではなく「未収録」と返す（安全と誤解させないため）
+
+## 判定して返るもの
+- 想定最大規模／計画規模の浸水深ランク（0.5m未満〜20m以上）
+- 浸水継続時間（12時間未満〜4週間以上の7段階）
+- 家屋倒壊等氾濫想定区域（氾濫流／河岸侵食）
+- 内水の浸水深・継続時間（名古屋市）
+- 海抜（国土地理院の標高データ）
+- 行動の目安（浸水深3m以上・家屋倒壊区域・3日以上の浸水は立退き避難）
+- いまの避難情報（名古屋市。住所→学区を引き、市の災害情報配信の警戒レベル・河川・発令時刻を添える）
+
+## 使い方
+- 住所で調べる: {PUBLIC_BASE}/?q=<住所>
+- 地図で見る（国の洪水想定・内水・学区の避難情報を重ねる）: {PUBLIC_BASE}/map/
+- マイ・タイムライン（警戒レベル1〜5の行動表を印刷）: {PUBLIC_BASE}/timeline
+- CSV一括判定（拠点・物件をまとめて）: {PUBLIC_BASE}/batch
+- データと設計の説明: {PUBLIC_BASE}/about
+- API: {PUBLIC_BASE}/api/check?q=<住所>
+
+## 名古屋市の個別ページ
+- 区: {wards}
+- 河川: {rivers}
+
+## 注意
+判定は町丁目の代表点による参考情報で、公的な証明ではない。不動産取引の重要事項説明には
+自治体のハザードマップそのものを使うこと。正確な区域は自治体の窓口で確認すること。
+
+運営: 株式会社エクスブリッジ https://exbridge.jp/
+"""
 
 
 @app.get('/robots.txt', response_class=PlainTextResponse)

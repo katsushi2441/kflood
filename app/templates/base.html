@@ -5,11 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}{{ site }}{% endblock %}</title>
 <meta name="description" content="{% block desc %}住所を入れると、洪水（河川の氾濫）と内水（下水道・水路からの浸水）で何メートル・何日浸かる想定かを、データ時点つきで返します。{% endblock %}">
+<link rel="canonical" href="{{ canonical }}">
 <meta property="og:title" content="{{ self.title() }}">
 <meta property="og:description" content="{{ self.desc() }}">
 <meta property="og:type" content="website">
-<meta property="og:image" content="https://kurage.exbridge.jp/kflood.php/ogp.png">
+<meta property="og:site_name" content="{{ site }}">
+<meta property="og:url" content="{{ canonical }}">
+<meta property="og:image" content="{{ public_base }}/ogp.png">
+<meta property="og:locale" content="ja_JP">
 <meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">{{ jsonld|safe }}</script>
 <style>
 :root{--teal:#0a9a8f;--teal-d:#087f76;--teal-l:#e6f4f2;--navy:#12202f;--ink:#1f2933;--muted:#5d6b7a;--line:#dfe6ea;--bg:#f6f9f9;--red:#c0392b;--red-l:#fbeae8;--amber:#b7791f;--amber-l:#fdf3e0;--blue:#1f5f8b;--blue-l:#e8f1f8}
 *{box-sizing:border-box}html{color-scheme:light}body{margin:0;background:var(--bg);color:var(--ink);font-family:"Noto Sans JP","Hiragino Sans","Yu Gothic",system-ui,sans-serif;line-height:1.75;font-size:16px}
