@@ -48,7 +48,7 @@ function go(){
   return false;
 }
 function render(j){
-  var n=j.national, w=j.naisui, h='';
+  var n=j.national, w=j.naisui, tk=j.takashio||{}, h='';
   h+='<div class="panel"><div class="src">判定に使った住所: <b>'+esc(j.address)+'</b>（'+j.lat.toFixed(5)+', '+j.lon.toFixed(5)+'）'+(j.elevation?' 海抜 <b>'+j.elevation.m+'m</b>':'')+' / '+esc(j.checked_at)+'</div>';
   h+='<p style="margin:8px 0 0"><a class="btn ghost" href="map/?lat='+j.lat+'&lon='+j.lon+'&q='+encodeURIComponent(j.address||'')+'">この地点を地図で見る（洪水・内水・学区の発令）</a></p>';
   h+='<h2 style="margin-top:12px">洪水（河川の氾濫）</h2><div class="grid">';
@@ -76,6 +76,15 @@ function render(j){
     h+='<div class="card '+(w.minutes?'lv1':'none')+'"><div class="k">内水 浸水継続時間</div><div class="v">'+(w.minutes_label?esc(w.minutes_label):'想定なし')+'</div></div>';
   }
   h+='</div>';
+  // 高潮。洪水・内水と同じ「何メートル浸かるか」なので同じ画面に並べる。
+  // 名古屋では伊勢湾台風（1959）の高潮で5,000人以上が亡くなっている。
+  if(tk.status && tk.status!=='uncovered'){
+    var tr=tk.depth_m==null?0:tk.depth_m>=3?3:tk.depth_m>=0.5?2:1;
+    h+='<h2>高潮（台風による海からの浸水）</h2><div class="grid">';
+    h+='<div class="card '+(tk.status==='inside'?lv(tr):'none')+'"><div class="k">'+esc(tk.area)+' 高潮 浸水深</div><div class="v">'+(tk.status==='inside'?esc(tk.depth_label)+' <small>('+tk.depth_m+'m)</small>':'想定なし')+'</div><div class="s">室戸台風規模が満潮時に伊勢湾へ来た場合の想定</div></div>';
+    h+='<div class="card '+(tk.hours?'lv1':'none')+'"><div class="k">高潮 浸水継続時間</div><div class="v">'+(tk.hours!=null?esc(String(tk.hours))+' 時間':'想定なし')+'</div><div class="s">水が引くまでの目安</div></div>';
+    h+='</div>';
+  }
   if(j.guidance.length){h+='<h2>行動の目安</h2><ul class="guide">'+j.guidance.map(g=>'<li>'+esc(g)+'</li>').join('')+'</ul>';}
   j.notes.forEach(t=>{h+='<div class="note">'+esc(t)+'</div>'});
   h+='<p class="noprint" style="margin:14px 0 6px"><a class="btn" href="timeline?q='+encodeURIComponent(j.query)+'">この住所でマイ・タイムラインを作る</a> <a class="btn ghost" target="_blank" rel="noopener" href="{{ links.portal }}?ll='+j.lat+','+j.lon+'&z=15&base=pale&ls=flood_l2_shinsuishin_data%2C0.8&disp=1&vs=c1j0l0u0t0h0z0">重ねるハザードマップで地図を見る</a></p>';

@@ -134,7 +134,7 @@ def vintage_year(v: str):
 
 def check_point(lon, lat, title=''):
     """1地点の判定。返り値は JSON にそのまま出せる dict。"""
-    out = dict(lon=lon, lat=lat, address=title, national=None, naisui=None, alert=None, guidance=[], notes=[], datasets=[])
+    out = dict(lon=lon, lat=lat, address=title, national=None, naisui=None, takashio=None, alert=None, guidance=[], notes=[], datasets=[])
     with db() as conn, conn.cursor() as cur:
         pt = 'ST_SetSRID(ST_Point(%s,%s),6668)'
         # 1) 未収録か
@@ -206,6 +206,34 @@ def check_point(lon, lat, title=''):
             for k, n, v, a, note in cur.fetchall():
                 out['datasets'].append(dict(key=k, name=n, vintage=v, attribution=a, note=note))
         out['naisui'] = nai
+
+        # 2.2) 高潮（自治体版）。洪水・内水と同じ「何メートル浸かるか」の問いなので、
+        #      別サイトに分けず同じ画面に並べる。名古屋にとって高潮は伊勢湾台風の災害そのもの。
+        tks = dict(status='uncovered', area=None, depth_m=None, depth_label=None, hours=None)
+        try:
+            cur.execute(f'SELECT area FROM takashio_coverage WHERE ST_Contains(geom, {pt}) LIMIT 1', (lon, lat))
+            trow = cur.fetchone()
+            tarea = trow[0] if trow else None
+            if tarea:
+                tks['area'] = tarea
+                cur.execute(f'SELECT max(depth_m) FROM takashio_depth WHERE area=%s AND ST_Contains(geom, {pt})',
+                            (tarea, lon, lat))
+                td = cur.fetchone()[0]
+                cur.execute(f'SELECT max(hours) FROM takashio_duration WHERE area=%s AND ST_Contains(geom, {pt})',
+                            (tarea, lon, lat))
+                th = cur.fetchone()[0]
+                tks.update(status='inside' if td is not None else 'outside',
+                           depth_m=(round(float(td), 2) if td is not None else None),
+                           depth_label=naisui_band(float(td)) if td is not None else None,
+                           hours=(round(float(th), 1) if th is not None else None))
+                cur.execute("SELECT key,name,data_vintage,attribution,note FROM datasets "
+                            "WHERE key LIKE %s ORDER BY key", ('%takashio%',))
+                for k, n, v, a, note in cur.fetchall():
+                    out['datasets'].append(dict(key=k, name=n, vintage=v, attribution=a, note=note))
+        except Exception:
+            # 高潮データをまだ取り込んでいない環境でも、洪水・内水の判定は続けられるようにする
+            conn.rollback()
+        out['takashio'] = tks
 
         # 2.5) いま出ている避難情報（自治体版）。学区が引ける自治体だけ。取得失敗は「発令なし」と区別する。
         al = dict(status='uncovered', gakku=None, items=[], max_level=None, fetched_at=None, source=None, source_url=None)
