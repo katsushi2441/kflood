@@ -56,7 +56,9 @@ SITE = os.environ.get('KFLOOD_SITE_NAME', 'Kurage 洪水・内水ハザードマ
 PUBLIC_BASE = os.environ.get('KFLOOD_PUBLIC_BASE', 'https://kurage.exbridge.jp/kflood.php').rstrip('/')
 LINKS = {
     'portal': 'https://disaportal.gsi.go.jp/maps/',
-    'nagoya_naisui': 'https://www.city.nagoya.jp/bosaikikikanri/page/0000154015.html',
+    # 市はページを移し、呼び名も法令用語へ変えた（内水ハザードマップ→雨水出水浸水想定区域）。
+    # 旧URL bosaikikikanri/page/0000154015.html は404（2026-09-14 実測）。リンク切れは定期的に検査する。
+    'nagoya_naisui': 'https://www.city.nagoya.jp/bousaiportal/hazardmap/1013531/1013532.html',
     'khazard': 'https://kurage.exbridge.jp/khazard.php/',
     'ktsunami': 'https://kurage.exbridge.jp/ktsunami.php/',
     'krefuge': 'https://kurage.exbridge.jp/krefuge.php/',
