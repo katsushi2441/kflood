@@ -710,6 +710,31 @@ TERMS = [("内水ハザードマップ", "雨水出水浸水想定区域（名�
          ("100年に1度の雨", "計画規模（想定最大規模はさらに大きい雨）")]
 
 
+_WAGAMACHI_MTIME = 0.0
+
+
+def _wagamachi_path():
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "data", "wagamachi.json")
+
+
+def _wagamachi():
+    """公式ハザードマップのリンク。ファイルが更新されていたら読み直す。
+
+    生存確認のジョブ（kurage_web/backend/sourcelink_jobs.py）が ok を書き換えるので、
+    mtime を見て読み直せば**サービスを再起動しなくても**死んだリンクが消える。
+    """
+    global WAGAMACHI, WAGAMACHI_FETCHED, _WAGAMACHI_MTIME
+    try:
+        m = os.path.getmtime(_wagamachi_path())
+    except OSError:
+        return WAGAMACHI
+    if m != _WAGAMACHI_MTIME:
+        WAGAMACHI, WAGAMACHI_FETCHED = _load_wagamachi()
+        _WAGAMACHI_MTIME = m
+    return WAGAMACHI
+
+
 def _load_wagamachi():
     """市区町村の公式ハザードマップへのリンク（scripts/fetch_wagamachi.py が作る）。
 
@@ -727,11 +752,15 @@ def _load_wagamachi():
 
 
 WAGAMACHI, WAGAMACHI_FETCHED = _load_wagamachi()
+try:
+    _WAGAMACHI_MTIME = os.path.getmtime(_wagamachi_path())
+except OSError:
+    _WAGAMACHI_MTIME = 0.0
 
 
 def wagamachi_for(code, kinds=('洪水', '内水')):
     """テンプレートに渡す形。生きているリンクだけ links に、窓口は contact に。"""
-    w = WAGAMACHI.get(code) or {}
+    w = _wagamachi().get(code) or {}
     links, contact = [], None
     for kind in kinds:
         it = w.get(kind)
