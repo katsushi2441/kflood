@@ -48,4 +48,33 @@
 <form class="search" action="../../" method="get" style="margin-top:10px"><input type="text" name="q" value="愛知県名古屋市{{ w.name }}" required><button class="btn" type="submit">この住所で判定する</button></form>
 <p class="src" style="margin-top:8px">住所を町名まで入れると、想定最大規模の浸水深・継続時間・家屋倒壊区域・内水と、その学区の発令を返します。{% if w.office_address %}区役所: {{ w.office_address }}{% if w.office_tel %}／{{ w.office_tel }}{% endif %}{% endif %}</p>
 </div>
+{% if wm and (wm.links or wm.contact) %}
+<div class="panel">
+<h2 style="margin-top:0">名古屋市の公式ハザードマップ</h2>
+<p>このページの判定は国と市のデータにもとづく<strong>参考情報</strong>です。正式なものは市が作るハザードマップなので、最終確認はこちらでお願いします。</p>
+{% if wm.links %}<ul style="font-size:14.5px;line-height:1.8">
+{% for l in wm.links %}<li><a href="{{ l.url }}" target="_blank" rel="noopener">名古屋市の{{ l.kind }}ハザードマップ（市公式）</a><br><span class="src">担当: {{ l.dept or '—' }}{% if l.tel %} ／ {{ l.tel }}{% endif %}</span></li>{% endfor %}
+</ul>
+{% else %}<p class="src">公開ページのリンクが変わっているため、窓口をご案内します。担当: {{ wm.contact.dept or '—' }}{% if wm.contact.tel %} ／ {{ wm.contact.tel }}{% endif %}</p>{% endif %}
+<p class="src">出典: わがまちハザードマップ（ハザードマップポータルサイト・国土交通省）{% if wm.fetched %}・{{ wm.fetched }}時点{% endif %}。リンク先の著作権は名古屋市にあり、最新版でない場合があります。</p>
+</div>
+<div class="panel">
+<h2 style="margin-top:0">市のハザードマップとの使い分け</h2>
+<div class="tscroll"><table class="t">
+<tr><th></th><th>名古屋市の公式ハザードマップ</th><th>このページ</th></tr>
+<tr><th>調べ方</th><td>地図の中から自分の場所を目で探す</td><td>住所を入れると1件で判定</td></tr>
+<tr><th>形</th><td>地図（多くはPDF）</td><td>Webページ（文字で読める・読み上げできる）</td></tr>
+<tr><th>今の状況</th><td>載らない</td><td>その学区に出ている避難情報を添える</td></tr>
+<tr><th>位置づけ</th><td><strong>正式</strong></td><td>参考情報（出典と時点を明記）</td></tr>
+</table></div>
+<p class="src">不動産取引の重要事項説明には、市区町村の正式なハザードマップを使ってください。</p>
+</div>
+<div class="panel">
+<h2 style="margin-top:0">検索でよく使われる言い方と、行政の用語</h2>
+<div class="tscroll"><table class="t"><tr><th>ふだんの言い方</th><th>法令・行政の用語</th></tr>
+{% for a, b in wm.terms %}<tr><td>{{ a }}</td><td>{{ b }}</td></tr>{% endfor %}
+</table></div>
+<p class="src">自治体のページは法令の用語で書かれているので、ふだんの言い方で検索すると見つからないことがあります。名古屋市は「内水ハザードマップ」を「雨水出水浸水想定区域」へ改めています。このページはどちらの言い方でも同じ答えを返します。</p>
+</div>
+{% endif %}
 {% endblock %}

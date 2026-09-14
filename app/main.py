@@ -697,6 +697,52 @@ def _ward_stats(area: str, ward: str):
         return None
 
 
+
+# 検索する人の言い方と、法令・行政の用語はずれている。両方の語で拾えるように対応表を置く。
+# 実例: 名古屋市は「内水ハザードマップ」を「雨水出水浸水想定区域」へ改称し、URLも変えていた
+# （旧 /bosaikikikanri/page/0000154015.html は404。2026-09-14 実測）。
+TERMS = [("内水ハザードマップ", "雨水出水浸水想定区域（名古屋市はこの呼び名に変えました）"),
+         ("浸水マップ・水害マップ", "洪水浸水想定区域"),
+         ("何メートル浸かるか", "浸水深（想定最大規模／計画規模）"),
+         ("何日浸かるか・いつ引くか", "浸水継続時間"),
+         ("家が流される", "家屋倒壊等氾濫想定区域（氾濫流・河岸侵食）"),
+         ("下水があふれる・道路冠水", "内水氾濫／雨水出水"),
+         ("100年に1度の雨", "計画規模（想定最大規模はさらに大きい雨）")]
+
+
+def _load_wagamachi():
+    """市区町村の公式ハザードマップへのリンク（scripts/fetch_wagamachi.py が作る）。
+
+    国のデータでの判定は参考情報で、正式なものは市区町村が作るハザードマップ。
+    ポータル側のリンクも1割弱が切れているので、生存確認の結果（ok）を見て出し分ける。
+    """
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        'data', 'wagamachi.json')
+    try:
+        d = json.load(open(path, encoding='utf-8'))
+        return d.get('muni', {}), d.get('_fetched', '')
+    except Exception as e:  # noqa: BLE001
+        print('わがまちハザードマップを読めません（公式リンクは出しません）:', e)
+        return {}, ''
+
+
+WAGAMACHI, WAGAMACHI_FETCHED = _load_wagamachi()
+
+
+def wagamachi_for(code, kinds=('洪水', '内水')):
+    """テンプレートに渡す形。生きているリンクだけ links に、窓口は contact に。"""
+    w = WAGAMACHI.get(code) or {}
+    links, contact = [], None
+    for kind in kinds:
+        it = w.get(kind)
+        if not it:
+            continue
+        contact = contact or it
+        if it.get('ok', True):
+            links.append({'kind': kind, **it})
+    return {'links': links, 'contact': contact, 'fetched': WAGAMACHI_FETCHED, 'terms': TERMS}
+
+
 @app.get('/nagoya/', response_class=HTMLResponse)
 def nagoya_hub(request: Request):
     live = get_live()
@@ -722,7 +768,8 @@ def nagoya_ward(request: Request, slug: str):
         for g in (gakku if '*' in a['gakku'] else a['gakku']):
             gmax[g] = max(gmax.get(g, 0), a['level'])
     return page(request, 'ward.html', w=w, live=live, gakku=gakku, walerts=walerts, gmax=gmax,
-                stats=_ward_stats(nagoya.CITY, w['name']), rivers=nagoya.rivers_for_ward(w['name']))
+                stats=_ward_stats(nagoya.CITY, w['name']), rivers=nagoya.rivers_for_ward(w['name']),
+                wm=wagamachi_for('23100'))
 
 
 @app.get('/river/{slug}/', response_class=HTMLResponse)
