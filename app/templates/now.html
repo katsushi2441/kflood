@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% set nav = 'now' %}
+{% block title %}いま、どうするか（{{ res.address }}）｜{{ site }}{% endblock %}
+{% block body %}
+<div class="noprint" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+<h1 style="margin:0">いま、どうするか</h1>
+<div><a class="btn ghost" href="now">住所を変える</a> <a class="btn ghost" href="timeline?q={{ res.address|urlencode }}{% for k,v in hh.items() %}{% if v %}&{{ k }}=1{% endif %}{% endfor %}">平時の計画（マイ・タイムライン）</a></div>
+</div>
+<p class="src">住所: <b>{{ res.address }}</b>{% if hh.values()|select|list %}／世帯条件: {% if hh.elderly %}高齢者{% endif %}{% if hh.infant %}・乳幼児{% endif %}{% if hh.disabled %}・要介護/障害{% endif %}{% if hh.upper_floor %}・2階以上あり{% endif %}{% if hh.car %}・車{% endif %}{% if hh.pet %}・ペット{% endif %}{% endif %}</p>
+
+{# ── いまの発令。**取得できなかったことを「発令なし」と書かない** ── #}
+<div class="pol {{ 'ok' if nw.state=='calm' }}" style="{% if nw.state=='alert' and nw.level>=4 %}border-color:var(--red);background:var(--red-l){% elif nw.state=='alert' %}border-color:var(--amber);background:var(--amber-l){% elif nw.state=='unknown' %}border-color:var(--blue);background:var(--blue-l){% endif %}">
+{{ nw.headline }}
+<small>{{ nw.detail|replace('**','')|safe }}</small>
+</div>
+{% if nw.acts %}<ul class="acts">{% for a in nw.acts %}<li>{{ a }}</li>{% endfor %}</ul>{% endif %}
+{% set al = res.alert %}
+{% if al and al.fetched_at %}<p class="src">{{ al.fetched_at }} 取得{% if al.status=='stale' %}（前回取得できた値）{% endif %}{% if al.source %}／出典: <a href="{{ al.source_url }}" target="_blank" rel="noopener">{{ al.source }}</a>{% endif %}。発令は3分ごとに取り直しています。<b>最終的な判断は市区町村の発表に従ってください。</b></p>{% endif %}
+
+<h2>この場所の想定</h2>
+<div class="grid">
+{% set n = res.national %}{% set w = res.naisui %}
+<div class="card {{ 'lv3' if n.max and n.max.rank>=3 else 'lv2' if n.max and n.max.rank==2 else 'lv1' if n.max else 'none' }}"><div class="k">洪水 想定最大規模</div><div class="v">{{ n.max.label if n.max else ('未収録' if n.status=='uncovered' else '区域外') }}</div></div>
+<div class="card {{ 'lv3' if n.collapse else 'none' }}"><div class="k">家屋倒壊等氾濫想定区域</div><div class="v">{{ n.collapse|map(attribute='label')|join('・') if n.collapse else '該当なし' }}</div></div>
+<div class="card {{ 'lv2' if w.status=='inside' and w.depth_m>=0.5 else 'lv1' if w.status=='inside' else 'none' }}"><div class="k">内水 浸水深</div><div class="v">{{ (w.depth_label ~ '（' ~ w.depth_m ~ 'm）') if w.status=='inside' else ('未収録' if w.status=='uncovered' else '想定なし') }}</div></div>
+{% if tl.dosha %}<div class="card {{ 'lv3' if tl.dosha.inside else 'none' }}"><div class="k">土砂災害</div><div class="v">{% if tl.dosha.inside %}{{ tl.dosha.labels|join('・') }}{% elif tl.dosha.nearest_m and tl.dosha.nearest_m <= 200 %}区域外（最寄り約{{ tl.dosha.nearest_m }}m）{% else %}区域外{% endif %}</div></div>{% endif %}
+{% if tl.tsunami %}<div class="card {{ 'lv3' if tl.tsunami.inside else 'none' }}"><div class="k">津波浸水想定</div><div class="v">{% if tl.tsunami.inside %}{{ tl.tsunami.depth_label or '浸水想定あり' }}{% else %}想定なし{% endif %}</div></div>{% endif %}
+</div>
+
+<h2>この住所の避難の基本</h2>
+<div class="pol {{ 'ok' if tl.policy.startswith('在宅') }}">{{ tl.policy }}<small>理由: {{ tl.why }}。判断の型は内閣府「避難情報に関するガイドライン」（令和8年3月改定）に合わせています。</small></div>
+
+{% if tl.refuge and tl.refuge['items'] %}<h2>近い避難先（{{ tl.refuge.hazard_label or '洪水' }}に対応している指定緊急避難場所）</h2>
+{# **レベル5では移動そのものが危険。** 徒歩○分だけ並べると「行けばよい」と読めてしまう #}
+{% if nw.level and nw.level >= 5 %}<div class="pol" style="border-color:var(--red);background:var(--red-l)">いまは移動が危険な段階です<small>下の避難先は、安全に移動できる場合の行き先です。すでに浸水・土砂崩れが起きている状況では、外に出ずその場で高い場所へ移ってください。</small></div>{% endif %}
+<div class="grid">
+{% for it in tl.refuge['items'] %}<div class="card"><div class="k">徒歩約{{ it.walk_minutes }}分{% if it.distance_m %}・{{ it.distance_m }}m{% endif %}</div><div class="v" style="font-size:16px">{{ it.name }}</div><div class="s">{{ it.address }}{% if it.hazards %}<br>対応: {{ it.hazards|join('・') }}{% endif %}</div></div>{% endfor %}
+</div>
+<p class="src">出典: 国土地理院「指定緊急避難場所データ」（CC BY 4.0）{% if tl.refuge.vintage %}／データ時点 {{ tl.refuge.vintage }}{% endif %}{% if tl.refuge.walk_basis %}／徒歩時間は{{ tl.refuge.walk_basis }}による目安{% endif %}。<b>実際に開設されているかは、当日の市区町村の発表で確かめてください。</b>この一覧は「その災害に使える場所として指定されているか」だけを示します。</p>{% endif %}
+
+<div class="panel noprint" style="margin-top:22px">
+<h2 style="margin-top:0">この画面の作り</h2>
+<p>いま出ている避難情報（発令）と、この住所の浸水・土砂・津波の想定を掛け合わせています。<b>どちらか片方では、避難するかどうかは決まりません。</b>同じ避難指示でも、浸水深50cmの家と3mの家では取るべき行動が違うためです。</p>
+<p class="src">発令は市区町村の配信から、警戒レベル・種別・対象学区の事実だけを機械的に抜いています。要約や独自の判断は加えていません。判定は住所の代表点によるもので、公的な証明ではありません。<a href="about">データについて</a></p>
+</div>
+{% endblock %}

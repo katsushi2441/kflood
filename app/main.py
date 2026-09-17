@@ -689,6 +689,99 @@ def build_timeline(res, hh, sib=None):
                 dosha=dosha, tsunami=tsunami, refuge=ref or None)
 
 
+def build_now(res, tl, hh):
+    """**いま、どうするか。** 平時の方針（tl）と、いま出ている避難情報を掛け合わせる。
+
+    平時のハザードマップは「どこが危ないか」しか言わない。発令は「いま危ない」しか
+    言わない。**避難するかどうかは、その2つを掛けないと決まらない**（浸水深50cmの家と
+    3mの家では、同じ避難指示でも取るべき行動が違う）。ここはその掛け算だけを行う。
+
+    **取得できなかったことを「発令なし」と書かない。** 市の配信が落ちているときに
+    「発令はありません」と出すのが、この種の道具でいちばん危ない誤りになる。
+    """
+    al = res.get('alert') or {}
+    items = al.get('items') or []
+    live_ok = al.get('status') in ('ok', 'stale')
+    care = bool(hh.get('elderly') or hh.get('infant') or hh.get('disabled'))
+    # 立退き避難が要る場所か（屋内安全確保に頼れない場所を含む）
+    leave = tl['policy'].startswith('立退き') or tl['policy'].startswith('早めの立退き')
+    lv = al.get('max_level') if items else None
+
+    if not al.get('gakku'):
+        return dict(state='no_area', level=None, headline='この住所の自治体は、発令をまだ取り込んでいません',
+                    detail='いま出ている避難情報は、お住まいの市区町村の発表でご確認ください。'
+                           'このページの下にある「この場所の想定」と「とるべき行動」は、いつでも使えます。',
+                    acts=[], leave=leave)
+    area = f"{al['gakku']['ward']}{al['gakku']['name']}学区"
+    if not live_ok:
+        return dict(state='unknown', level=None, headline=f'{area}の避難情報を取得できませんでした',
+                    detail='**発令が無いという意味ではありません。** 市の配信に接続できなかっただけです。'
+                           '市区町村の発表・防災無線・テレビで確かめてください。',
+                    acts=[], leave=leave)
+    if not items:
+        return dict(state='calm', level=None, headline=f'いま{area}に、警戒レベル3〜5の発令はありません',
+                    detail='いまは平時です。下の「とるべき行動」を読んで、避難先と持ち出す物を決めておいてください。'
+                           '発令されてから調べ始めると間に合いません。',
+                    acts=[], leave=leave)
+
+    acts = []
+    if lv >= 5:
+        headline = f'【警戒レベル5】{area}に緊急安全確保が出ています'
+        detail = 'すでに災害が起きている、または起きる直前です。**避難所への移動は危険な場合があります。**'
+        acts = ['外に出ず、その場でいちばん安全な場所へ。建物の上の階、山や崖から離れた側の部屋へ',
+                '浸水した水には入らない。マンホール・側溝・流れのある水は見た目より危険']
+    elif lv == 4:
+        headline = f'【警戒レベル4】{area}に避難指示が出ています'
+        if leave:
+            detail = 'この住所は**立退き避難が必要な場所**です。いますぐ、区域の外の避難先へ移動してください。'
+            acts = ['いますぐ全員で避難を完了する。夜間・豪雨のなかの移動になる前に出る',
+                    '持ち出す物より命を優先する。近所にも声をかける']
+            if hh.get('car'):
+                acts.append('冠水した道路とアンダーパスには入らない。危なければ車を降りて高い場所へ')
+            if hh.get('upper_floor'):
+                acts.append('移動そのものが危険なほど状況が悪いときだけ、上の階へ切り替える')
+        else:
+            detail = 'この住所は、条件を満たせば**建物の上の階にとどまる**選択ができる場所です。外の状況で判断してください。'
+            acts = ['外に出るのが危険なら、建物の浸水しない上の階へ移る',
+                    '水・食料・薬・充電したスマホ・懐中電灯を上の階へ運ぶ',
+                    '地下・半地下から離れ、ブレーカーを落とす']
+    else:
+        headline = f'【警戒レベル3】{area}に高齢者等避難が出ています'
+        if care:
+            detail = 'この世帯には**避難に時間がかかる人がいます。いまが避難を始めるタイミング**です。'
+            acts = ['いま避難を始める。明るいうちに、雨が強くなる前に出発する',
+                    '薬・介護用品・ミルク・おむつを持つ。移動の支援が要るなら早めに頼む']
+        elif leave:
+            detail = 'この住所は立退き避難が必要な場所です。**次のレベル4を待たずに**、準備を終えてください。'
+            acts = ['避難先と経路を決め、持ち出す物をまとめ終える',
+                    'レベル4を待たず、暗くなる前・雨が強くなる前に出る判断をする']
+        else:
+            detail = '避難に時間がかかる人は避難を始めるタイミングです。それ以外の人も準備をしてください。'
+            acts = ['気象情報と市の避難情報をこまめに確認する', '外出の予定を見合わせ、避難の準備をする']
+    for it in items:
+        acts.append(f"発令: 警戒レベル{it['level']}・{it['label']}（{it['target']}）"
+                    + (f" {str(it.get('issued_at') or '')[5:16].replace('T', ' ')}" if it.get('issued_at') else ''))
+    return dict(state='alert', level=lv, headline=headline, detail=detail, acts=acts, leave=leave)
+
+
+@app.get('/now', response_class=HTMLResponse)
+def now_page(request: Request, q: str = '', elderly: int = 0, infant: int = 0, disabled: int = 0, car: int = 0,
+             upper_floor: int = 0, pet: int = 0):
+    """いま、この住所の人がどうすべきか。**発令 × 想定 × 避難先**を1画面で。"""
+    if not q:
+        return page(request, 'now_form.html')
+    if limited(client_ip(request)):
+        raise HTTPException(429, '短時間に多くの判定が行われました。1分ほど待ってから再度お試しください')
+    ensure_ready()
+    res = check_query(q)
+    hh = dict(elderly=elderly, infant=infant, disabled=disabled, car=car, upper_floor=upper_floor, pet=pet, people=0)
+    sib = siblings.probe(res.get('lat'), res.get('lon'))
+    tl = build_timeline(res, hh, sib)
+    nw = build_now(res, tl, hh)
+    return page(request, 'now.html', res=res, hh=hh, tl=tl, nw=nw,
+                depth_rank=DEPTH_RANK, today=date.today().strftime('%Y年%m月%d日'))
+
+
 @app.get('/timeline', response_class=HTMLResponse)
 def timeline(request: Request, q: str = '', elderly: int = 0, infant: int = 0, disabled: int = 0, car: int = 0,
              upper_floor: int = 0, pet: int = 0, people: int = 0):
@@ -847,7 +940,7 @@ def river_page(request: Request, slug: str):
 @app.get('/sitemap.xml')
 def sitemap(request: Request):
     base = 'https://kurage.exbridge.jp/kflood.php/'
-    urls = ['', 'nagoya/', 'map/', 'timeline', 'batch', 'about'] + [f"nagoya/{w['slug']}/" for w in nagoya.wards()] + [f"river/{r['slug']}/" for r in nagoya.rivers()]
+    urls = ['', 'now', 'nagoya/', 'map/', 'timeline', 'batch', 'about'] + [f"nagoya/{w['slug']}/" for w in nagoya.wards()] + [f"river/{r['slug']}/" for r in nagoya.rivers()]
     body = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + ''.join(f'<url><loc>{base}{u}</loc></url>' for u in urls) + '</urlset>'
     return PlainTextResponse(body, media_type='application/xml')
 

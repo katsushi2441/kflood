@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% set nav = 'now' %}
+{% block title %}いま、どうするか｜{{ site }}{% endblock %}
+{% block body %}
+<h1>いま、どうするか</h1>
+<p class="lead">住所を入れると、<b>いま出ている避難情報</b>と<b>その住所の浸水・土砂・津波の想定</b>を掛け合わせて、いま取るべき行動を出します。ハザードマップは「どこが危ないか」しか言わず、発令は「いま危ない」しか言いません。避難するかどうかは、その2つを掛けないと決まりません。</p>
+<div class="panel">
+<form action="now" method="get">
+<label style="font-weight:700">住所</label>
+<div class="search" style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px"><input type="text" name="q" style="flex:1 1 260px;min-width:0;font-size:17px;padding:12px 14px;border:2px solid var(--line);border-radius:10px" placeholder="例: 愛知県名古屋市西区城西" required></div>
+<label style="font-weight:700">世帯の条件（あてはまるものすべて）</label>
+<div class="grid" style="margin:6px 0 14px">
+<label class="card"><input type="checkbox" name="elderly" value="1"> 高齢者（避難に時間がかかる人）がいる</label>
+<label class="card"><input type="checkbox" name="infant" value="1"> 乳幼児がいる</label>
+<label class="card"><input type="checkbox" name="disabled" value="1"> 障害のある人・要介護の人がいる</label>
+<label class="card"><input type="checkbox" name="car" value="1"> 車で避難できる</label>
+<label class="card"><input type="checkbox" name="upper_floor" value="1"> 2階以上の部屋がある</label>
+<label class="card"><input type="checkbox" name="pet" value="1"> ペットがいる</label>
+</div>
+<button class="btn" type="submit">いま、どうするかを見る</button>
+</form>
+</div>
+<div class="panel">
+<h2 style="margin-top:0">出てくるもの</h2>
+<div class="steps">
+<div class="step"><b>1</b><strong>いまの発令</strong>学区に出ている警戒レベル3〜5を、市の配信から3分ごとに取り直します。<b>取得できなかったときは「発令なし」とは書きません。</b></div>
+<div class="step"><b>2</b><strong>この場所の想定</strong>洪水・内水・家屋倒壊等氾濫想定区域に加え、土砂災害と津波も判定します</div>
+<div class="step"><b>3</b><strong>いま取るべき行動</strong>立退き避難が要る場所か、上の階にとどまれる場所かで、同じ発令でも書く内容を変えます</div>
+<div class="step"><b>4</b><strong>近い避難先</strong>その災害に対応した指定緊急避難場所を、名前と徒歩何分で出します</div>
+</div>
+<p class="src" style="margin-top:12px">判断の型は内閣府「避難情報に関するガイドライン」（令和8年3月改定）に合わせています。自宅に留まる「屋内安全確保」を選べるのは洪水等と高潮に限られ、土砂災害と津波は立退き避難が基本です。発令が出ていない平時は、<a href="timeline">マイ・タイムライン</a>で家族の行動表を作れます。</p>
+</div>
+{% endblock %}

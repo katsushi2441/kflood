@@ -6,3 +6,8 @@ php/kflood_config.php
 __pycache__/
 *.pyc
 !data/nagoya_wards.json
+outputs/
+*.bak
+*.bak-*
+.env.*
+*.env.bak*
