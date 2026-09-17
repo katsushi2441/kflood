@@ -33,6 +33,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from fastapi.templating import Jinja2Templates
 
 from app import alerts as live_alerts
+from app import siblings
 from app import nagoya
 from app.codes import (CATEGORY, COLLAPSE, DEPTH_ACTION, DEPTH_RANK, DURATION_RANK, LONG_DURATION_RANK, RIVER,
                        minutes_label, naisui_band)
@@ -593,14 +594,38 @@ LEVELS = [
 ]
 
 
-def build_timeline(res, hh):
+def build_timeline(res, hh, sib=None):
+    """とるべき行動を決める。
+
+    **判断の型は内閣府「避難情報に関するガイドライン」（令和8年3月改定）に合わせている。**
+    自宅に留まる「屋内安全確保」を選べるのは洪水等・高潮に限られ、しかも
+      ❶家屋倒壊等氾濫想定区域に存していないこと
+      ❷浸水しない居室があること
+      ❸一定期間の浸水による支障を許容できること
+    の3つを満たすときだけ。**土砂災害と津波は立退き避難が基本**なので、
+    洪水の想定が小さくても「在宅で安全確保」と言ってはいけない。
+    土砂・津波の判定は siblings が取れたときだけ足す（取れないときは黙って出さない）。
+    """
     nat, nai = res['national'], res['naisui']
+    sib = sib or {}
+    dosha, tsunami = sib.get('dosha'), sib.get('tsunami')
+    dosha_in = bool(dosha and dosha.get('inside'))
+    tsunami_in = bool(tsunami and tsunami.get('inside'))
     depth = nat['max']['rank'] if nat.get('max') else 0
     long_dur = bool(nat.get('duration') and nat['duration']['rank'] >= LONG_DURATION_RANK)
     collapse = bool(nat.get('collapse'))
     care = hh.get('elderly') or hh.get('infant') or hh.get('disabled')
     # 避難の方針
-    if collapse or depth >= 3 or long_dur:
+    if dosha_in or tsunami_in:
+        # ガイドラインで屋内安全確保の対象外。洪水の深さに関わらず立退き避難。
+        parts = []
+        if dosha_in:
+            parts.append('土砂災害特別警戒区域（レッドゾーン）' if dosha.get('special') else '土砂災害警戒区域')
+        if tsunami_in:
+            parts.append('津波浸水想定区域')
+        policy = '立退き避難（区域の外へ。この場所では屋内での安全確保に頼れません）'
+        why = '・'.join(parts) + 'のため（土砂災害・津波は上の階に逃げる方法が使えません）'
+    elif collapse or depth >= 3 or long_dur:
         policy = '立退き避難（区域外の避難所・親戚宅・ホテルなどへ）'
         why = ('家屋倒壊等氾濫想定区域のため' if collapse else '浸水深が3m以上（2階も浸水）のため' if depth >= 3 else '浸水が3日以上続く想定のため')
     elif depth in (1, 2):
@@ -654,7 +679,14 @@ def build_timeline(res, hh):
     r3 = ['警戒レベル5「緊急安全確保」はすでに災害が起きている状態。外に出ず、その場で命を守る行動（上階・近くの頑丈な建物の高い場所へ）',
           '浸水した水には近づかない。感電・マンホール・流されるおそれ']
     rows.append(r3)
-    return dict(policy=policy, why=why, levels=LEVELS, rows=rows)
+    # **避難先は名前と徒歩何分まで出す。**「避難所へ」だけでは、その場で調べ直すことになる。
+    ref = sib.get('refuge') or {}
+    for it in (ref.get('items') or [])[:2]:
+        mins = it.get('walk_minutes')
+        rows[1].append(f"避難先の候補: {it['name']}（徒歩約{mins}分・{it.get('address', '')}）"
+                       if mins else f"避難先の候補: {it['name']}（{it.get('address', '')}）")
+    return dict(policy=policy, why=why, levels=LEVELS, rows=rows,
+                dosha=dosha, tsunami=tsunami, refuge=ref or None)
 
 
 @app.get('/timeline', response_class=HTMLResponse)
@@ -667,7 +699,9 @@ def timeline(request: Request, q: str = '', elderly: int = 0, infant: int = 0, d
     ensure_ready()
     res = check_query(q)
     hh = dict(elderly=elderly, infant=infant, disabled=disabled, car=car, upper_floor=upper_floor, pet=pet, people=people)
-    tl = build_timeline(res, hh)
+    # 土砂・津波・避難先は別の道具に尋ねる。**すでに求めた代表点をそのまま渡す**（引き直さない）。
+    sib = siblings.probe(res.get('lat'), res.get('lon'))
+    tl = build_timeline(res, hh, sib)
     return page(request, 'timeline.html', res=res, hh=hh, tl=tl,
                                                            depth_rank=DEPTH_RANK, today=date.today().strftime('%Y年%m月%d日'))
 
