@@ -64,7 +64,10 @@ LINKS = {
     'ktsunami': 'https://kurage.exbridge.jp/ktsunami.php/',
     'krefuge': 'https://kurage.exbridge.jp/krefuge.php/',
     'buy': 'https://kappstore.exbridge.jp/app.php?id=41a09acc163dcb7d&ref=kflood',
-    'komon': 'https://exbridge.jp/ai-it-komon.html?ref=kflood',
+    'komon': 'https://exbridge.jp/ai-it-komon.html?ref=kflood-juyo',
+    # 宅建業者向けの商品。出品後にIDが決まるので、ここを差し替える
+    'takken_buy': os.environ.get('KFLOOD_TAKKEN_BUY',
+                                 'https://kappstore.exbridge.jp/?ref=kflood-juyo'),
 }
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 templates = Jinja2Templates(directory=os.path.join(ROOT, 'app', 'templates'))
