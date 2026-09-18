@@ -31,11 +31,15 @@
   <td><b style="display:block;line-height:1.5">{{ r.name }}</b><span class="src">{{ r.law }}</span></td>
   <td>
     {% if r.verdict == '該当' %}<span class="badge red">該当</span>
-    {% elif r.verdict == '非該当' %}<span class="badge">非該当</span>
+    {% elif r.verdict in ('非該当', '指定対象外') %}<span class="badge">{{ r.verdict }}</span>
+    {% elif r.verdict.startswith('指定なし') %}<span class="badge">{{ r.verdict }}</span>
+    {% elif r.verdict == '確認できない' %}<span class="badge amber">確認できない</span>
     {% elif r.verdict.startswith('参考判定') %}<span class="badge amber">{{ r.verdict }}</span>
     {% else %}<span class="badge amber">{{ r.verdict }}</span>{% endif %}
   </td>
   <td>{{ r.detail }}{% if r.vintage %}<br><span class="src">データ時点 {{ r.vintage }}</span>{% endif %}
+      {% if r.src_url %}<br><span class="src">出典: <a href="{{ r.src_url }}" target="_blank" rel="noopener">{{ r.src_name }}</a></span>{% endif %}
+      {% if r.extra %}<br><span class="src">{{ r.extra|replace('**','') }}</span>{% endif %}
       <br><span class="src">{{ r.note|replace('**','') }}</span></td>
 </tr>
 {% endfor %}
@@ -61,6 +65,8 @@
 <li>国土数値情報「洪水浸水想定区域」（国土交通省）／データ時点 {{ a31_vintage }}</li>
 <li>国土数値情報「土砂災害警戒区域」A33（国土交通省）</li>
 <li>国土数値情報「津波浸水想定」A40（国土交通省）<b>※津波災害警戒区域とは別のデータです</b></li>
+<li>愛知県「マップあいち」津波災害情報マップ（CC BY 2.1 JP）を加工／愛知県知事の指定・令和元年7月30日公示／32市区町村・1,657,714面を収録。
+    <b>うち9市区町村（名古屋市港区・中川区、津島市、愛西市、弥富市、飛島村、豊橋市、西尾市、田原市）は配布データが10万面で打ち切られており、「非該当」とは表示しません。</b></li>
 <li>国土数値情報「宅地造成等工事規制区域・特定盛土等規制区域」A56（国土交通省）</li>
 <li>国土数値情報「災害危険区域」A48（国土交通省）／自治体により収録の有無が異なります</li>
 <li>内水・高潮は自治体の公表データ（収録している自治体のみ）</li>

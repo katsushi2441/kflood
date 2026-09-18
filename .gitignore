@@ -11,3 +11,4 @@ outputs/
 *.bak-*
 .env.*
 *.env.bak*
+!data/zosei_takuchi.json

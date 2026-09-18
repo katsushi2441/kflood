@@ -135,9 +135,59 @@ def vintage_year(v: str):
     return int(m.group(1)) if m else None
 
 
+# 愛知県が令和元年7月30日に津波災害警戒区域を指定した市町村（名古屋市は7区のみ）。
+# **ここに無い市区町村は「指定対象外」と言い切れる**（収録漏れではない）ので、表に持つ。
+TK_DESIGNATED = {
+    '名古屋市中村区', '名古屋市熱田区', '名古屋市中川区', '名古屋市港区',
+    '名古屋市南区', '名古屋市緑区', '名古屋市瑞穂区',
+    '豊橋市', '豊川市', '蒲郡市', '田原市', '西尾市', '碧南市', '刈谷市', '安城市', '高浜市',
+    '半田市', '常滑市', '東海市', '大府市', '知多市', '阿久比町', '東浦町', '南知多町',
+    '美浜町', '武豊町', '津島市', '愛西市', '弥富市', 'あま市', '蟹江町', '飛島村',
+}
+
+
+def tsunami_keikai_at(cur, lon, lat, address):
+    """津波災害警戒区域（重説 第三号）。**「打ち切り」と「区域外」を必ず分ける。**
+
+    マップあいちの配布は10万面で打ち切られるため、打ち切られた市区町村では
+    「当たらなかった」＝「区域外」ではない。そこを混ぜると重説の誤りになる。
+    """
+    pt = 'ST_SetSRID(ST_Point(%s,%s),6668)'
+    out = dict(status='unknown', city=None, base_level=None, vintage=None, attribution=None)
+    try:
+        cur.execute(f'SELECT city, base_level FROM tsunami_keikai WHERE ST_Contains(geom, {pt}) LIMIT 1',
+                    (lon, lat))
+        hit = cur.fetchone()
+    except Exception:  # noqa: BLE001  表が無い設置でも他の判定は続ける
+        return out
+    if hit:
+        cur.execute('SELECT data_vintage, attribution FROM tsunami_keikai_coverage WHERE city=%s', (hit[0],))
+        cov = cur.fetchone() or (None, None)
+        out.update(status='inside', city=hit[0], base_level=hit[1], vintage=cov[0], attribution=cov[1])
+        return out
+    # 当たらなかったとき。住所からその市区町村の収録状況を見る
+    cur.execute('SELECT city, truncated, data_vintage, attribution FROM tsunami_keikai_coverage')
+    rows = cur.fetchall()
+    addr = address or ''
+    best = None
+    for city, trunc, vint, attr in rows:
+        key = city.replace('名古屋市', '') if city.startswith('名古屋市') else city
+        if city in addr or ('名古屋市' in addr and key in addr):
+            if best is None or len(city) > len(best[0]):
+                best = (city, trunc, vint, attr)
+    if best:
+        city, trunc, vint, attr = best
+        out.update(status=('partial' if trunc else 'outside'), city=city, vintage=vint, attribution=attr)
+    elif '愛知県' in addr or '名古屋市' in addr:
+        # 愛知県内だが指定26市町村に含まれない
+        out.update(status='not_designated')
+    return out
+
+
 def check_point(lon, lat, title=''):
     """1地点の判定。返り値は JSON にそのまま出せる dict。"""
-    out = dict(lon=lon, lat=lat, address=title, national=None, naisui=None, takashio=None, alert=None, guidance=[], notes=[], datasets=[])
+    out = dict(lon=lon, lat=lat, address=title, national=None, naisui=None, takashio=None,
+               tsunami_keikai=None, alert=None, guidance=[], notes=[], datasets=[])
     with db() as conn, conn.cursor() as cur:
         pt = 'ST_SetSRID(ST_Point(%s,%s),6668)'
         # 1) 未収録か
@@ -254,6 +304,8 @@ def check_point(lon, lat, title=''):
             for k, n, v, a, note in cur.fetchall():
                 out['datasets'].append(dict(key=k, name=n, vintage=v, attribution=a, note=note))
         out['alert'] = al
+        # 重説の第三号（津波災害警戒区域）。愛知県分を収録している設置でだけ値が入る。
+        out['tsunami_keikai'] = tsunami_keikai_at(cur, lon, lat, title)
 
     # 3) 行動の目安と注意書き
     g, notes = out['guidance'], out['notes']
@@ -814,6 +866,35 @@ JUYO_ITEMS = [
 ]
 
 
+_ZOSEI = None
+
+
+def zosei_declaration(address: str):
+    """造成宅地防災区域について、**自治体が「指定なし」と公表しているか**を引く。
+
+    当社が区域データで判定しているのではない。自治体の公表を引用するだけなので、
+    出典と時点をそのまま画面に出す（時点が古いものは古いまま見せる）。
+    """
+    global _ZOSEI
+    if _ZOSEI is None:
+        try:
+            with open(os.path.join(ROOT, 'data', 'zosei_takuchi.json'), encoding='utf-8') as f:
+                _ZOSEI = json.load(f).get('declarations') or []
+        except Exception:  # noqa: BLE001
+            _ZOSEI = []
+    addr = address or ''
+    best = None
+    for d in _ZOSEI:
+        if d['match'] not in addr:
+            continue
+        if any(x in addr for x in (d.get('except') or [])):
+            continue
+        # より細かい一致（市名）を優先する
+        if best is None or len(d['match']) > len(best['match']):
+            best = d
+    return best
+
+
 def build_juyo(res, sib):
     """重説の災害項目を1枚にまとめる。**判定できないものを「該当なし」と書かない。**"""
     nat, nai, tks = res['national'], res['naisui'], (res.get('takashio') or {})
@@ -852,6 +933,36 @@ def build_juyo(res, sib):
             r.update(verdict=('参考判定あり' if nat.get('max') or nai.get('status') == 'inside'
                               or tks.get('status') == 'inside' else '参考判定：想定なし'),
                      detail='／'.join(parts))
+        elif it['key'] == 'zosei':
+            dec = zosei_declaration(res.get('address'))
+            if dec and dec.get('status') == 'none':
+                r.update(verdict='指定なし（自治体の公表）', judged=True,
+                         detail=dec['text'], vintage=dec.get('as_of') or '',
+                         src_name=dec.get('source_name'), src_url=dec.get('source_url'),
+                         extra=dec.get('note') or '')
+            else:
+                r.update(verdict='当社データなし', detail='自治体・都道府県の公表資料でご確認ください。')
+        elif it['key'] == 'tsunami_keikai':
+            tk = res.get('tsunami_keikai') or {}
+            st = tk.get('status')
+            if st == 'inside':
+                r.update(verdict='該当', judged=True, vintage=tk.get('vintage') or '',
+                         detail=f"津波災害警戒区域内（基準水位 {tk.get('base_level')}m）" if tk.get('base_level') is not None
+                                else '津波災害警戒区域内')
+            elif st == 'outside':
+                r.update(verdict='非該当', judged=True, vintage=tk.get('vintage') or '',
+                         detail=f"{tk.get('city')}は収録済み。この地点は区域外です。")
+            elif st == 'partial':
+                # **配布データが10万面で打ち切られている市区町村。「非該当」とは言えない。**
+                r.update(verdict='確認できない', vintage=tk.get('vintage') or '',
+                         detail=f"{tk.get('city')}の配布データは10万面で打ち切られており、"
+                                f"区域の一部しか収録できていません。県の公示図書でご確認ください。")
+            elif st == 'not_designated':
+                r.update(verdict='指定対象外', judged=True,
+                         detail='この市区町村は津波災害警戒区域の指定対象に含まれていません'
+                                '（愛知県・令和元年7月30日指定の26市町村）。')
+            else:
+                r.update(verdict='当社データなし', detail='都道府県の公表資料でご確認ください。')
         else:
             r.update(verdict='当社データなし', detail='自治体・都道府県の公表資料でご確認ください。')
         rows.append(r)
