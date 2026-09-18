@@ -35,6 +35,10 @@ APIS = {
     'dosha': os.environ.get('KFLOOD_KHAZARD_API', '').rstrip('/'),
     'tsunami': os.environ.get('KFLOOD_KTSUNAMI_API', '').rstrip('/'),
     'refuge': os.environ.get('KFLOOD_KREFUGE_API', '').rstrip('/'),
+    # 重要事項説明の災害項目で使う。どちらも「規則16条の4の3」の4項目そのものではないが、
+    # 別の号で説明が要る指定なので、同じ紙に載せる（取り違えないよう名前をそのまま出す）。
+    'morido': os.environ.get('KFLOOD_KMORIDO_API', '').rstrip('/'),      # 宅地造成等工事規制区域・特定盛土等規制区域（A56）
+    'riskarea': os.environ.get('KFLOOD_KRISKAREA_API', '').rstrip('/'),  # 災害危険区域（建築基準法39条・A48）
 }
 
 _cache: dict = {}
@@ -139,4 +143,46 @@ def probe(lat: float, lon: float, hazard: str = 'flood') -> dict:
         _cache[key] = (now, out)
         if len(_cache) > 2000:
             _cache.clear()
+    return out
+
+
+def _simple(base_key: str, lat: float, lon: float):
+    """kmorido / kriskarea は同じ形（status, areas, data_vintage）で返す。"""
+    base = APIS[base_key]
+    if not base:
+        return None
+    d = _get(f'{base}/api/check?lat={lat}&lon={lon}')
+    if 'status' not in d:
+        return None
+    areas = d.get('areas') or []
+    names = []
+    for a in areas:
+        for k in ('area_type', 'name', 'zone_name', 'title'):
+            if a.get(k):
+                names.append(str(a[k]))
+                break
+    return dict(inside=(d.get('status') == 'inside'), status=d.get('status'),
+                labels=sorted(set(names)), nearest_m=d.get('nearest_m'),
+                vintage=d.get('data_vintage') or d.get('data_as_of'),
+                attribution=d.get('attribution'))
+
+
+def probe_juyo(lat: float, lon: float) -> dict:
+    """重要事項説明の災害項目のために、必要な判定先だけを尋ねる。
+
+    **避難先（krefuge）は聞かない。** 重説の紙に避難所は要らない。
+    落ちた相手は None のままにして、画面で「取得できず」と出す。
+    **「取得できなかった」を「該当なし」と書かない**のがこの紙のいちばん大事な決まり。
+    """
+    out = dict(dosha=None, tsunami=None, morido=None, riskarea=None)
+    for name, fn in (('dosha', _dosha), ('tsunami', _tsunami)):
+        try:
+            out[name] = fn(lat, lon)
+        except Exception:  # noqa: BLE001
+            out[name] = None
+    for name in ('morido', 'riskarea'):
+        try:
+            out[name] = _simple(name, lat, lon)
+        except Exception:  # noqa: BLE001
+            out[name] = None
     return out

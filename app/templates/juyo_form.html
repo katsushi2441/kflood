@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% set nav = 'juyo' %}
+{% block title %}重要事項説明の災害項目を住所から調べる｜{{ site }}{% endblock %}
+{% block body %}
+<h1>重要事項説明の災害項目を、住所から一度に調べる</h1>
+<p class="lead">宅地建物取引業法施行規則 第16条の4の3 が定める災害に関する4項目について、住所ひとつで判定できるものを判定し、<b>判定できないものは「当社データなし」と印字します</b>。根拠条文とデータ時点を添えた紙を、物件ごとの調査記録として印刷できます。</p>
+
+<div class="panel">
+<form action="juyo" method="get">
+<label style="font-weight:700">物件の所在地</label>
+<div class="search" style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px"><input type="text" name="q" style="flex:1 1 260px;min-width:0;font-size:17px;padding:12px 14px;border:2px solid var(--line);border-radius:10px" placeholder="例: 愛知県名古屋市西区城西4丁目" required></div>
+<button class="btn" type="submit">災害項目を調べる</button>
+</form>
+</div>
+
+<div class="panel">
+<h2 style="margin-top:0">何が出て、何が出ないか</h2>
+<p><b>正直に先に書きます。4項目のうち2項目は、当社では判定できません。</b>国のオープンデータに無く、都道府県や市町村が個別に公表しているためです。</p>
+<div class="scroll"><table>
+<tr><th style="width:52px">号</th><th>項目</th><th style="width:150px">当社の判定</th></tr>
+<tr><td>一号</td><td>造成宅地防災区域（盛土規制法45条1項）</td><td><span class="badge amber">できない</span></td></tr>
+<tr><td>二号</td><td>土砂災害警戒区域（土砂災害防止法7条1項）</td><td><span class="badge">できる</span></td></tr>
+<tr><td>三号</td><td>津波災害警戒区域（津波防災地域づくり法53条1項）</td><td><span class="badge amber">できない</span></td></tr>
+<tr><td>三号の二</td><td>水害ハザードマップにおける所在地（水防法施行規則11条1号）</td><td><span class="badge">参考判定</span></td></tr>
+</table></div>
+<p class="src" style="margin-top:10px">三号の二について。条文が指すのは<b>市町村長が提供する図面</b>です。当社は国の洪水浸水想定区域と自治体の内水・高潮のデータで参考の判定を出しますが、<b>説明には市町村が作成した水害ハザードマップそのものをお使いください。</b></p>
+<p class="src">あわせて、別の号で説明が要る「宅地造成等工事規制区域・特定盛土等規制区域」と「災害危険区域（建築基準法39条）」も同じ紙に載せます。</p>
+</div>
+
+<div class="panel">
+<h2 style="margin-top:0">なぜ作ったか</h2>
+<div class="steps">
+<div class="step"><b>1</b><strong>調べる場所が分かれている</strong>土砂・津波・盛土・水害で、見るサイトも図面も別々。物件ごとに繰り返す</div>
+<div class="step"><b>2</b><strong>記録が残りにくい</strong>いつ・どの時点のデータで確認したかは、あとから説明を求められたときに効く</div>
+<div class="step"><b>3</b><strong>できない所を空欄にしない</strong>判定できない2項目を黙って飛ばすと、確認漏れが見えなくなる。紙の上に残す</div>
+</div>
+<p class="src" style="margin-top:12px">これは調査の下ごしらえであって、重要事項説明そのものではありません。最終的な内容は、宅地建物取引士の責任でご判断ください。</p>
+</div>
+{% endblock %}

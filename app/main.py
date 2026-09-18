@@ -782,6 +782,126 @@ def now_page(request: Request, q: str = '', elderly: int = 0, infant: int = 0, d
                 depth_rank=DEPTH_RANK, today=date.today().strftime('%Y年%m月%d日'))
 
 
+# 宅地建物取引業法施行規則 第16条の4の3 の災害に関する項目。
+# **原文で確認した号だけを載せる**（2026-09-18 に e-Gov の法令APIで確認）。
+# 「当社のデータで判定できるか」と「説明義務があるか」は別なので、列を分けて出す。
+JUYO_ITEMS = [
+    dict(key='zosei', no='一号',
+         name='造成宅地防災区域',
+         law='宅地造成及び特定盛土等規制法 第45条第1項',
+         source=None,
+         note='都道府県知事が個別に指定する区域で、国のオープンデータにありません。'
+              '当社では判定できないため、自治体の公表資料でご確認ください。'),
+    dict(key='dosha', no='二号',
+         name='土砂災害警戒区域',
+         law='土砂災害防止法 第7条第1項',
+         source='khazard',
+         note='国土数値情報「土砂災害警戒区域」A33 で判定します。'),
+    dict(key='tsunami_keikai', no='三号',
+         name='津波災害警戒区域',
+         law='津波防災地域づくりに関する法律 第53条第1項',
+         source=None,
+         note='都道府県が個別に指定する区域で、国のオープンデータにありません。'
+              '当社では判定できないため、都道府県の公表資料でご確認ください。'
+              '（参考として、別データの「津波浸水想定」を下に載せています）'),
+    dict(key='suigai', no='三号の二',
+         name='水害ハザードマップにおける所在地',
+         law='水防法施行規則 第11条第1号の図面',
+         source='kflood',
+         note='条文が指すのは**市町村長が提供する図面**です。当社が判定に使うのは国の'
+              '洪水浸水想定区域と自治体の内水・高潮のデータなので、'
+              '**説明には自治体が作成した水害ハザードマップそのものをお使いください。**'),
+]
+
+
+def build_juyo(res, sib):
+    """重説の災害項目を1枚にまとめる。**判定できないものを「該当なし」と書かない。**"""
+    nat, nai, tks = res['national'], res['naisui'], (res.get('takashio') or {})
+    rows = []
+    for it in JUYO_ITEMS:
+        r = dict(it, verdict='未判定', detail='', vintage='', judged=False)
+        if it['key'] == 'dosha':
+            d = sib.get('dosha')
+            if d is None:
+                r.update(verdict='取得できず', detail='土砂災害の判定に接続できませんでした。該当なしという意味ではありません。')
+            else:
+                r['judged'] = True
+                r['vintage'] = d.get('vintage') or ''
+                if d.get('inside'):
+                    r.update(verdict='該当', detail='・'.join(d.get('labels') or ['土砂災害警戒区域']))
+                else:
+                    near = d.get('nearest_m')
+                    r.update(verdict='非該当',
+                             detail=(f'区域外（最寄りの区域まで約{near}m）' if near and near <= 200 else '区域外'))
+        elif it['key'] == 'suigai':
+            r['judged'] = True
+            r['vintage'] = a31_vintage()
+            parts = []
+            if nat.get('max'):
+                parts.append('洪水 想定最大規模 ' + nat['max']['label'])
+            elif nat.get('status') == 'uncovered':
+                parts.append('洪水 未収録')
+            else:
+                parts.append('洪水 区域外')
+            if nat.get('collapse'):
+                parts.append('家屋倒壊等氾濫想定区域 ' + '・'.join(x['label'] for x in nat['collapse']))
+            if nai.get('status') == 'inside':
+                parts.append(f"内水 {nai.get('depth_label') or ''}")
+            if tks.get('status') == 'inside':
+                parts.append(f"高潮 {tks.get('depth_label') or ''}")
+            r.update(verdict=('参考判定あり' if nat.get('max') or nai.get('status') == 'inside'
+                              or tks.get('status') == 'inside' else '参考判定：想定なし'),
+                     detail='／'.join(parts))
+        else:
+            r.update(verdict='当社データなし', detail='自治体・都道府県の公表資料でご確認ください。')
+        rows.append(r)
+    # 参考（別の号で説明が要るもの）
+    ref = []
+    m = sib.get('morido')
+    if m is not None:
+        ref.append(dict(name='宅地造成等工事規制区域・特定盛土等規制区域',
+                        law='宅地造成及び特定盛土等規制法',
+                        verdict=('該当' if m.get('inside') else '非該当'),
+                        detail='・'.join(m.get('labels') or []) if m.get('inside') else '区域外',
+                        vintage=m.get('vintage') or ''))
+    k = sib.get('riskarea')
+    if k is not None:
+        ref.append(dict(name='災害危険区域', law='建築基準法 第39条',
+                        verdict=('該当' if k.get('inside') else ('非該当' if k.get('status') == 'outside' else '未収録')),
+                        detail='・'.join(k.get('labels') or []) if k.get('inside') else
+                               ('区域外' if k.get('status') == 'outside' else 'この自治体のデータを収録していません'),
+                        vintage=k.get('vintage') or ''))
+    t = sib.get('tsunami')
+    if t is not None:
+        ref.append(dict(name='津波浸水想定（参考。津波災害警戒区域とは別のデータ）',
+                        law='国土数値情報 A40',
+                        verdict=('浸水想定あり' if t.get('inside') else '想定なし'),
+                        detail=(t.get('depth_label') or '') if t.get('inside') else
+                               (f"標高 {t.get('elevation_m')}m" if t.get('elevation_m') is not None else ''),
+                        vintage=t.get('vintage') or ''))
+    return dict(rows=rows, ref=ref)
+
+
+@app.get('/juyo', response_class=HTMLResponse)
+def juyo(request: Request, q: str = ''):
+    """重要事項説明の災害項目を、根拠条文とデータ時点つきで1枚にする。
+
+    **これは調査の下ごしらえであって、重要事項説明そのものではない。**
+    4項目のうち2項目（造成宅地防災区域・津波災害警戒区域）は国のオープンデータが無く、
+    当社では判定できない。そこを黙って「該当なし」にすると、重説の誤りに直結する。
+    """
+    if not q:
+        return page(request, 'juyo_form.html')
+    if limited(client_ip(request)):
+        raise HTTPException(429, '短時間に多くの判定が行われました。1分ほど待ってから再度お試しください')
+    ensure_ready()
+    res = check_query(q)
+    sib = siblings.probe_juyo(res.get('lat'), res.get('lon'))
+    jy = build_juyo(res, sib)
+    return page(request, 'juyo.html', res=res, jy=jy,
+                checked_at=datetime.now().strftime('%Y年%m月%d日 %H:%M'))
+
+
 @app.get('/timeline', response_class=HTMLResponse)
 def timeline(request: Request, q: str = '', elderly: int = 0, infant: int = 0, disabled: int = 0, car: int = 0,
              upper_floor: int = 0, pet: int = 0, people: int = 0):
@@ -940,7 +1060,7 @@ def river_page(request: Request, slug: str):
 @app.get('/sitemap.xml')
 def sitemap(request: Request):
     base = 'https://kurage.exbridge.jp/kflood.php/'
-    urls = ['', 'now', 'nagoya/', 'map/', 'timeline', 'batch', 'about'] + [f"nagoya/{w['slug']}/" for w in nagoya.wards()] + [f"river/{r['slug']}/" for r in nagoya.rivers()]
+    urls = ['', 'now', 'juyo', 'nagoya/', 'map/', 'timeline', 'batch', 'about'] + [f"nagoya/{w['slug']}/" for w in nagoya.wards()] + [f"river/{r['slug']}/" for r in nagoya.rivers()]
     body = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + ''.join(f'<url><loc>{base}{u}</loc></url>' for u in urls) + '</urlset>'
     return PlainTextResponse(body, media_type='application/xml')
 

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% set nav = 'juyo' %}
+{% block title %}重要事項説明の災害項目（{{ res.address }}）｜{{ site }}{% endblock %}
+{% block body %}
+<div class="noprint" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+<h1 style="margin:0">重要事項説明の災害項目</h1>
+<div><a class="btn" href="javascript:window.print()">印刷する</a> <a class="btn ghost" href="juyo">住所を変える</a></div>
+</div>
+
+{# ── いちばん先に限界を書く。紙にした後で気づくと重説の誤りに直結する ── #}
+<div class="pol" style="border-color:var(--amber);background:var(--amber-l)">
+これは調査の下ごしらえです。重要事項説明そのものではありません
+<small>規則16条の4の3 の4項目のうち、<b>造成宅地防災区域と津波災害警戒区域は国のオープンデータが無く、当社では判定できません。</b>
+自治体・都道府県の公表資料で必ずご確認ください。水害の項目も、説明には市町村が作成したハザードマップそのものをお使いください。</small>
+</div>
+
+<div class="panel" style="margin-top:14px">
+<table>
+<tr><th style="width:120px">所在地</th><td><b>{{ res.address }}</b>（入力: {{ res.address }}）</td></tr>
+<tr><th>調査日時</th><td>{{ checked_at }}</td></tr>
+<tr><th>判定の基準点</th><td>住所の代表点（緯度 {{ '%.6f'|format(res.lat) }} / 経度 {{ '%.6f'|format(res.lon) }}）</td></tr>
+</table>
+</div>
+
+<h2 data-en="Required">宅地建物取引業法施行規則 第16条の4の3（災害に関する事項）</h2>
+<div class="scroll"><table>
+<tr><th style="width:70px;white-space:nowrap">号</th><th style="width:34%">項目と根拠</th><th style="width:116px">判定</th><th>内容・データ時点</th></tr>
+{% for r in jy.rows %}
+<tr>
+  <td style="white-space:nowrap">{{ r.no }}</td>
+  <td><b style="display:block;line-height:1.5">{{ r.name }}</b><span class="src">{{ r.law }}</span></td>
+  <td>
+    {% if r.verdict == '該当' %}<span class="badge red">該当</span>
+    {% elif r.verdict == '非該当' %}<span class="badge">非該当</span>
+    {% elif r.verdict.startswith('参考判定') %}<span class="badge amber">{{ r.verdict }}</span>
+    {% else %}<span class="badge amber">{{ r.verdict }}</span>{% endif %}
+  </td>
+  <td>{{ r.detail }}{% if r.vintage %}<br><span class="src">データ時点 {{ r.vintage }}</span>{% endif %}
+      <br><span class="src">{{ r.note|replace('**','') }}</span></td>
+</tr>
+{% endfor %}
+</table></div>
+
+{% if jy.ref %}
+<h2 data-en="Reference">あわせて確認する指定（別の号で説明が要るもの）</h2>
+<div class="scroll"><table>
+<tr><th>項目と根拠</th><th style="width:120px">判定</th><th>内容・データ時点</th></tr>
+{% for r in jy.ref %}
+<tr><td><b>{{ r.name }}</b><br><span class="src">{{ r.law }}</span></td>
+    <td>{% if r.verdict in ('該当','浸水想定あり') %}<span class="badge red">{{ r.verdict }}</span>
+        {% elif r.verdict == '未収録' %}<span class="badge amber">未収録</span>
+        {% else %}<span class="badge">{{ r.verdict }}</span>{% endif %}</td>
+    <td>{{ r.detail }}{% if r.vintage %}<br><span class="src">データ時点 {{ r.vintage }}</span>{% endif %}</td></tr>
+{% endfor %}
+</table></div>
+{% endif %}
+
+<h2 data-en="Sources">判定に使ったデータ</h2>
+<div class="panel">
+<ul style="margin:0;padding-left:20px">
+<li>国土数値情報「洪水浸水想定区域」（国土交通省）／データ時点 {{ a31_vintage }}</li>
+<li>国土数値情報「土砂災害警戒区域」A33（国土交通省）</li>
+<li>国土数値情報「津波浸水想定」A40（国土交通省）<b>※津波災害警戒区域とは別のデータです</b></li>
+<li>国土数値情報「宅地造成等工事規制区域・特定盛土等規制区域」A56（国土交通省）</li>
+<li>国土数値情報「災害危険区域」A48（国土交通省）／自治体により収録の有無が異なります</li>
+<li>内水・高潮は自治体の公表データ（収録している自治体のみ）</li>
+</ul>
+<p class="src" style="margin:10px 0 0">判定は住所の代表点を公開データに照らしたものです。区域の境目に近いときは、地番単位で自治体にご確認ください。
+公的な証明ではありません。<a href="about">データについて</a></p>
+</div>
+
+<div class="panel noprint" style="margin-top:18px">
+<h2 style="margin-top:0">この紙の使い方</h2>
+<p>物件ごとに印刷して、<b>いつ・どのデータの時点で・何を確認したか</b>の記録として残せます。
+判定できない2項目は空欄ではなく「当社データなし」と印字されるので、確認漏れが紙の上に残ります。</p>
+<p class="src">拠点や物件が複数あるときは <a href="batch">CSV一括判定</a> が使えます（洪水・内水の判定のみ）。</p>
+</div>
+{% endblock %}
