@@ -244,16 +244,29 @@ def check_point(lon, lat, title=''):
         cur.execute('SELECT area, dataset_keys FROM naisui_coverage')
         cov = cur.fetchall()
         # 収録範囲は座標で決める（地図クリックのように住所文字列が無い場合も判定できる）。念のため住所文字列でも補う
-        cur.execute(f'SELECT area FROM naisui_coverage WHERE ST_Contains(geom, {pt}) LIMIT 1', (lon, lat))
-        row = cur.fetchone()
-        area = row[0] if row else next((a for a, _ in cov if a and a in (title or '')), None)
+        # **収録範囲は外接矩形なので重なる。** 名古屋市の矩形は豊山町を含むため、
+        # LIMIT 1 で拾うと豊山町を名古屋市のデータで判定して「浸水なし」と出してしまう
+        # （2026-09-20 実測）。**候補を全部集めて、実際に面が当たったものを採る。**
+        cur.execute(f'SELECT area FROM naisui_coverage WHERE ST_Contains(geom, {pt})', (lon, lat))
+        cands = [r[0] for r in cur.fetchall()]
+        by_name = [a for a, _ in cov if a and a in (title or '')]
+        # 住所の文字列に名前が出てくるものを先に見る（豊山町のように市域に食い込む町を正しく選ぶ）
+        order = [a for a in by_name if a in cands] + [a for a in cands if a not in by_name] + \
+                [a for a in by_name if a not in cands]
         nai = dict(status='uncovered', area=None, depth_m=None, depth_label=None, minutes=None, minutes_label=None)
+        area = d = m = None
+        for cand in order:
+            cur.execute(f'SELECT max(depth_m) FROM naisui_depth WHERE area=%s AND ST_Contains(geom, {pt})', (cand, lon, lat))
+            dd = cur.fetchone()[0]
+            cur.execute(f'SELECT max(minutes) FROM naisui_duration WHERE area=%s AND ST_Contains(geom, {pt})', (cand, lon, lat))
+            mm = cur.fetchone()[0]
+            if area is None:
+                area, d, m = cand, dd, mm     # どれも当たらなければ先頭を「範囲内だが浸水想定外」に使う
+            if dd is not None:
+                area, d, m = cand, dd, mm     # 面が当たったものを優先
+                break
         if area:
             nai['area'] = area
-            cur.execute(f'SELECT max(depth_m) FROM naisui_depth WHERE area=%s AND ST_Contains(geom, {pt})', (area, lon, lat))
-            d = cur.fetchone()[0]
-            cur.execute(f'SELECT max(minutes) FROM naisui_duration WHERE area=%s AND ST_Contains(geom, {pt})', (area, lon, lat))
-            m = cur.fetchone()[0]
             nai.update(status='inside' if d is not None else 'outside', depth_m=(round(float(d), 2) if d is not None else None),
                        depth_label=naisui_band(float(d)) if d is not None else None,
                        minutes=(round(float(m)) if m is not None else None), minutes_label=minutes_label(m))
