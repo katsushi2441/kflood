@@ -16,7 +16,7 @@
   判定            : PostGIS（kflood-db）ST_Contains
   データ          : 国土数値情報 洪水浸水想定区域（1次メッシュ単位）全国。旧識別子 A31 第4.0版(2022年度)は後継 A31b(毎年5月更新)へ
                     移行する。どの版を使っているかは .env の KFLOOD_A31_PREFIX（datasets.key の接頭辞）で決める
-                    ＋ 名古屋市 内水氾濫ハザードマップ（CC BY）
+                    ＋ 名古屋市 内水氾濫ハザードマップ（CC BY）＋ 国土数値情報A51 内水（10市区町村）＋ 重ねるハザードマップ 内水（国土地理院・PDL1.0）
 """
 import csv
 import io
@@ -268,7 +268,8 @@ def check_point(lon, lat, title=''):
         if area:
             nai['area'] = area
             nai.update(status='inside' if d is not None else 'outside', depth_m=(round(float(d), 2) if d is not None else None),
-                       depth_label=naisui_band(float(d)) if d is not None else None,
+                       depth_label=naisui_band(float(d), 'gsi' if any(k.startswith('gsi_naisui_') for _a, ks in cov if _a == area for k in ks) else 'fine')
+                       if d is not None else None,
                        minutes=(round(float(m)) if m is not None else None), minutes_label=minutes_label(m))
             dk = [k for _, ks in cov if _ == area for k in ks]
             cur.execute('SELECT key,name,data_vintage,attribution,note FROM datasets WHERE key = ANY(%s) ORDER BY key', (dk,))

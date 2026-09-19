@@ -34,13 +34,24 @@ NAISUI_BANDS = [(0.0, 0.3, '0.3m未満'), (0.3, 0.5, '0.3m以上0.5m未満'), (0
                 (1.0, 2.0, '1.0m以上2.0m未満'), (2.0, 3.0, '2.0m以上3.0m未満'), (3.0, 99.0, '3.0m以上')]
 
 
-def naisui_band(depth_m):
+# 重ねるハザードマップ（国土地理院）の内水は、画像の色を区分の**下限**で保存している
+# （scripts/load_gsi_naisui_tiles.py）。凡例は「水害ハザードマップ作成の手引き」令和5年5月の
+# 区分で、細分（〜0.3m／0.5〜1.0m）が無い自治体では 0.3=「0.5m未満」、0.5=「0.5m以上3.0m未満」。
+# **名古屋の細かい区分（NAISUI_BANDS）で表示すると実際より細かく見えてしまう**ので分ける。
+GSI_NAISUI_BANDS = [(0.0, 0.3, '0.3m未満'), (0.3, 0.5, '0.5m未満'), (0.5, 3.0, '0.5m以上3.0m未満'),
+                    (3.0, 5.0, '3.0m以上5.0m未満'), (5.0, 10.0, '5.0m以上10.0m未満'),
+                    (10.0, 20.0, '10.0m以上20.0m未満'), (20.0, 999.0, '20.0m以上')]
+
+
+def naisui_band(depth_m, scheme='fine'):
+    """深さ(m)→区分ラベル。scheme='gsi' は重ねるハザードマップの粗い区分で読む。"""
     if depth_m is None:
         return None
-    for lo, hi, label in NAISUI_BANDS:
+    bands = GSI_NAISUI_BANDS if scheme == 'gsi' else NAISUI_BANDS
+    for lo, hi, label in bands:
         if lo <= depth_m < hi:
             return label
-    return NAISUI_BANDS[-1][2]
+    return bands[-1][2]
 
 
 def minutes_label(m):

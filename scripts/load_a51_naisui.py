@@ -128,7 +128,7 @@ def main() -> None:
             for area in areas:
                 cur.execute("""INSERT INTO naisui_coverage(area, dataset_keys, loaded_at, geom)
                                SELECT %s, ARRAY[%s], now(),
-                                      ST_Envelope(ST_Extent(geom))::geometry(Polygon,6668)
+                                      ST_Multi(ST_Envelope(ST_Extent(geom)))::geometry(MultiPolygon,6668)
                                FROM naisui_depth WHERE area=%s
                                ON CONFLICT (area) DO UPDATE SET
                                  dataset_keys = array_append(array_remove(naisui_coverage.dataset_keys, %s), %s),

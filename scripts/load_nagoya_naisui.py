@@ -160,7 +160,7 @@ def load(key, ds, force=False):
     n = len(n or [])
     psql('DROP TABLE IF EXISTS naisui_stage', fetch=False)
     psql("""INSERT INTO naisui_coverage(area, dataset_keys, loaded_at, geom)
-            SELECT %s, ARRAY[%s], now(), ST_Envelope(ST_Extent(geom))::geometry(Polygon,6668) FROM {t} WHERE area=%s
+            SELECT %s, ARRAY[%s], now(), ST_Multi(ST_Envelope(ST_Extent(geom)))::geometry(MultiPolygon,6668) FROM {t} WHERE area=%s
             ON CONFLICT (area) DO UPDATE SET dataset_keys = array_append(array_remove(naisui_coverage.dataset_keys, %s), %s),
               loaded_at=now(), geom=EXCLUDED.geom""".replace('{t}', ds['table']),
          (ds['area'], key, ds['area'], key, key), fetch=False)
