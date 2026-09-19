@@ -253,7 +253,7 @@ def check_point(lon, lat, title=''):
         # 住所の文字列に名前が出てくるものを先に見る（豊山町のように市域に食い込む町を正しく選ぶ）
         order = [a for a in by_name if a in cands] + [a for a in cands if a not in by_name] + \
                 [a for a in by_name if a not in cands]
-        nai = dict(status='uncovered', area=None, depth_m=None, depth_label=None, minutes=None, minutes_label=None)
+        nai = dict(status='uncovered', area=None, depth_m=None, depth_label=None, minutes=None, minutes_label=None, scheme='fine')
         area = d = m = None
         for cand in order:
             cur.execute(f'SELECT max(depth_m) FROM naisui_depth WHERE area=%s AND ST_Contains(geom, {pt})', (cand, lon, lat))
@@ -267,6 +267,8 @@ def check_point(lon, lat, title=''):
                 break
         if area:
             nai['area'] = area
+            # 重ねるHM（画像タイル）は区分の下限しか持たないので、画面には区分の語だけを出す
+            nai['scheme'] = 'gsi' if any(k.startswith('gsi_naisui_') for _a, ks in cov if _a == area for k in ks) else 'fine'
             nai.update(status='inside' if d is not None else 'outside', depth_m=(round(float(d), 2) if d is not None else None),
                        depth_label=naisui_band(float(d), 'gsi' if any(k.startswith('gsi_naisui_') for _a, ks in cov if _a == area for k in ks) else 'fine')
                        if d is not None else None,
@@ -1229,7 +1231,7 @@ def llms():
 - 行動の目安（浸水深3m以上・家屋倒壊区域・3日以上の浸水は立退き避難）
 - いまの避難情報（名古屋市。住所→学区を引き、市の災害情報配信の警戒レベル・河川・発令時刻を添える）
 
-## 買い切り版
+## オンプレミス版
 - 商品ページ: https://kappstore.exbridge.jp/app.php?id=41a09acc163dcb7d
 - 税込55,000円。ソースコード（MIT）・データ取り込みスクリプト・設置手順書を同梱。自社サーバーで動かせる。
 
