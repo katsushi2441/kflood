@@ -179,3 +179,39 @@ def city_summary(live: dict) -> dict:
         for w in it['wards']:
             ward_max[w] = max(ward_max.get(w, 0), it['level'])
     return dict(items=items, by_level=by_level, ward_max=ward_max, max_level=max((i['level'] for i in items), default=None))
+
+
+def history_for_gakku(ward: str, gakku: str, limit: int = 200) -> list:
+    """**この学区に、いつ何が出たか。** 発令の履歴を新しい順に返す。
+
+    港区の防災ポータルは配信の履歴が時刻つきで1か月ぶん残るが、名古屋市は事後のお知らせに流れて
+    追えない（2026-09-21 実測）。こちらは3分ごとに取った事実を貯めているので、住所から引ける。
+    数えているのは「市の配信に出た発令」だけで、当社の解釈は足していない。
+    """
+    out = []
+    with _conn() as c:
+        rows = c.execute("SELECT target, level, kind, issued_at, wards_json, first_seen, last_seen "
+                         "FROM alerts ORDER BY COALESCE(issued_at, first_seen) DESC LIMIT 2000").fetchall()
+    for target, level, kind, issued, wj, first, last in rows:
+        try:
+            wmap = json.loads(wj)
+        except (TypeError, ValueError):
+            continue
+        names = wmap.get(ward)
+        if names is None:
+            continue
+        if '*' not in names and gakku not in names:
+            continue
+        out.append(dict(target=target, level=level, kind=kind, issued_at=issued,
+                        first_seen=first, last_seen=last, slug=river_slug(target),
+                        whole_ward=('*' in names)))
+        if len(out) >= limit:
+            break
+    return out
+
+
+def history_span():
+    """履歴が何件・いつからあるか（画面に「何を数えたか」を出すため）。"""
+    with _conn() as c:
+        row = c.execute("SELECT count(*), min(COALESCE(issued_at, first_seen)), max(COALESCE(issued_at, first_seen)) FROM alerts").fetchone()
+    return dict(count=row[0] or 0, since=row[1], until=row[2])

@@ -18,6 +18,7 @@
                     移行する。どの版を使っているかは .env の KFLOOD_A31_PREFIX（datasets.key の接頭辞）で決める
                     ＋ 名古屋市 内水氾濫ハザードマップ（CC BY）＋ 国土数値情報A51 内水（10市区町村）＋ 重ねるハザードマップ 内水（国土地理院・PDL1.0）
 """
+import asyncio
 import csv
 import io
 import json
@@ -545,6 +546,24 @@ def map_page(request: Request, lat: float = None, lon: float = None, q: str = ''
     return page(request, 'map.html', lat=lat, lon=lon, q=q[:100])
 
 
+@app.on_event('startup')
+async def _start_recorder():
+    """発令の記録を、アクセスの有無と関係なく貯める。
+
+    履歴は「誰かがページを見たときだけ」だと穴が空く（夜中に出た発令を誰も踏まなければ残らない）。
+    **新しい systemd タイマーは作らず**、このサービスの中で3分ごとに取り直す。
+    取得できない時間帯があっても、次の周回で追いつく。
+    """
+    async def loop():
+        while True:
+            try:
+                await asyncio.to_thread(get_live)
+            except Exception as e:  # noqa: BLE001
+                print('発令の定期取得に失敗:', type(e).__name__, e)
+            await asyncio.sleep(180)
+    asyncio.create_task(loop())
+
+
 @app.get('/healthz')
 def healthz():
     with db() as conn, conn.cursor() as cur:
@@ -1016,6 +1035,41 @@ def build_juyo(res, sib):
     return dict(rows=rows, ref=ref)
 
 
+@app.get('/history', response_class=HTMLResponse)
+def history_page(request: Request, q: str = '', format: str = ''):
+    """**この住所（学区）に、いつ何が出たか。** 発令の記録を住所から引く。
+
+    港区の防災ポータルは配信履歴が時刻つきで残るが、名古屋市は事後のお知らせに流れて追えない
+    （2026-09-21 実測）。こちらは3分ごとに取った事実を貯めているので、後から検証できる。
+    CSV と JSON でも出す（町内会の記録・議会の質問・研究にそのまま使えるように）。
+    """
+    span = nagoya.history_span()
+    if not q:
+        return page(request, 'history.html', q='', gakku=None, rows=[], span=span, this_gakku=None)
+    if limited(client_ip(request)):
+        raise HTTPException(429, '短時間に多くの判定が行われました。1分ほど待ってから再度お試しください')
+    ensure_ready()
+    res = check_query(q)
+    gk = (res.get('alert') or {}).get('gakku')
+    rows = nagoya.history_for_gakku(gk['ward'], gk['name']) if gk else []
+    if format == 'json':
+        return JSONResponse(dict(query=q, address=res.get('address'), gakku=gk, span=span, items=rows,
+                                 source='名古屋市 災害情報配信', source_url=live_alerts.SOURCE_URL,
+                                 note='市の配信に出た発令の事実だけ。当社の解釈は含みません。'))
+    if format == 'csv':
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(['住所', '区', '学区', '発令時刻', '警戒レベル', '種別', '河川・災害', '対象', '最初に確認', '最後に確認'])
+        for r in rows:
+            w.writerow([res.get('address'), (gk or {}).get('ward'), (gk or {}).get('name'),
+                        (r.get('issued_at') or '').replace('T', ' '), r['level'], r.get('kind'), r['target'],
+                        '区の全学区' if r['whole_ward'] else (gk or {}).get('name'), r['first_seen'], r['last_seen']])
+        return PlainTextResponse('\ufeff' + buf.getvalue(), media_type='text/csv; charset=utf-8',
+                                 headers={'Content-Disposition': 'attachment; filename="kflood_history.csv"'})
+    return page(request, 'history.html', q=q, res=res, gakku=gk, rows=rows, span=span,
+                this_gakku=(gk or {}).get('name'))
+
+
 @app.get('/juyo', response_class=HTMLResponse)
 def juyo(request: Request, q: str = ''):
     """重要事項説明の災害項目を、根拠条文とデータ時点つきで1枚にする。
@@ -1194,7 +1248,7 @@ def river_page(request: Request, slug: str):
 @app.get('/sitemap.xml')
 def sitemap(request: Request):
     base = 'https://kurage.exbridge.jp/kflood.php/'
-    urls = ['', 'now', 'juyo', 'nagoya/', 'map/', 'timeline', 'batch', 'about'] + [f"nagoya/{w['slug']}/" for w in nagoya.wards()] + [f"river/{r['slug']}/" for r in nagoya.rivers()]
+    urls = ['', 'now', 'juyo', 'history', 'nagoya/', 'map/', 'timeline', 'batch', 'about'] + [f"nagoya/{w['slug']}/" for w in nagoya.wards()] + [f"river/{r['slug']}/" for r in nagoya.rivers()]
     body = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + ''.join(f'<url><loc>{base}{u}</loc></url>' for u in urls) + '</urlset>'
     return PlainTextResponse(body, media_type='application/xml')
 

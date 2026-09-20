@@ -103,6 +103,9 @@ def _refuge(lat: float, lon: float, hazard: str = 'flood'):
         hazard_label=d.get('hazard_label'),
         walk_basis=d.get('walk_basis'),
         vintage=d.get('data_vintage'),
+        # いまの開設状況（名古屋市の退避施設。**指定避難所の開設状況ではない**）。
+        # 港区の防災ポータルは「現在の開設状況」を常に出す。こちらも枠を出すために持ち帰る。
+        live=d.get('nagoya_live'),
         items=[dict(name=s.get('name'), address=s.get('address'),
                     walk_minutes=s.get('walk_minutes'), distance_m=s.get('distance_m'),
                     hazards=s.get('hazards') or []) for s in sh[:3]],

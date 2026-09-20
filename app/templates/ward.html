@@ -36,6 +36,7 @@
 <div class="card {{ 'lv3' if lv and lv>=4 else 'lv2' if lv else 'none' }}"><div class="k">{{ g }}学区</div><div class="v" style="font-size:16px">{{ ('警戒レベル' ~ lv) if lv else '発令なし' }}</div></div>
 {% endfor %}
 </div>
+<p style="margin:10px 0 0"><a class="btn ghost" href="../../history?q={{ ('愛知県名古屋市' ~ w.name)|urlencode }}">この区に、いつ何が出たかを見る</a></p>
 <p class="src">学区の境界は名古屋市「学区線（令和6年11月時点）」（CC BY 4.0）。住所を入れると、その住所の学区と発令を判定に添えます。</p>
 </div>
 <div class="panel">

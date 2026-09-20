@@ -52,7 +52,7 @@ footer{border-top:1px solid var(--line);background:#fff;padding:20px 0;color:var
 <body>
 <header class="top"><div class="wrap">
 <a class="brand" href="{{ root }}">{{ site }}<small>{% block badge %}名古屋市版デモ{% endblock %}</small></a>
-<nav class="menu"><a href="{{ root }}" class="{{ 'on' if nav=='home' }}">住所で判定</a><a href="{{ root }}now" class="{{ 'on' if nav=='now' }}">いま、どうするか</a><a href="{{ root }}juyo" class="{{ 'on' if nav=='juyo' }}">重説の災害項目</a><a href="{{ root }}nagoya/" class="{{ 'on' if nav=='nagoya' }}">名古屋市（区・河川）</a><a href="{{ root }}map/" class="{{ 'on' if nav=='map' }}">地図</a><a href="{{ root }}timeline" class="{{ 'on' if nav=='timeline' }}">マイ・タイムライン</a><a href="{{ root }}batch" class="{{ 'on' if nav=='batch' }}">CSV一括</a><a href="{{ root }}about" class="{{ 'on' if nav=='about' }}">データについて</a><a href="{{ links.buy }}" class="buy" target="_blank" rel="noopener">オンプレミス版</a></nav>
+<nav class="menu"><a href="{{ root }}" class="{{ 'on' if nav=='home' }}">住所で判定</a><a href="{{ root }}now" class="{{ 'on' if nav=='now' }}">いま、どうするか</a><a href="{{ root }}juyo" class="{{ 'on' if nav=='juyo' }}">重説の災害項目</a><a href="{{ root }}nagoya/" class="{{ 'on' if nav=='nagoya' }}">名古屋市（区・河川）</a><a href="{{ root }}map/" class="{{ 'on' if nav=='map' }}">地図</a><a href="{{ root }}history" class="{{ 'on' if nav=='history' }}">出た記録</a><a href="{{ root }}timeline" class="{{ 'on' if nav=='timeline' }}">マイ・タイムライン</a><a href="{{ root }}batch" class="{{ 'on' if nav=='batch' }}">CSV一括</a><a href="{{ root }}about" class="{{ 'on' if nav=='about' }}">データについて</a><a href="{{ links.buy }}" class="buy" target="_blank" rel="noopener">オンプレミス版</a></nav>
 </div></header>
 <main><div class="wrap">
 {% block body %}{% endblock %}

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% set nav = 'history' %}
+{% block title %}{% if gakku %}{{ gakku.ward }}{{ gakku.name }}学区に出た避難情報の記録｜住所で引く{% else %}この住所に、いつ何が出たか｜出た避難情報を住所から引く{% endif %}{% endblock %}
+{% block desc %}住所を入れると、その学区にこれまで出た避難情報（警戒レベル・種別・河川・発令時刻）を新しい順に並べます。CSVとJSONでも取り出せます。{% endblock %}
+{% block body %}
+<h1>この住所に、いつ何が出たか</h1>
+<p class="lead">住所を入れると、その<b>学区</b>に出た避難情報を新しい順に並べます。市の配信から3分ごとに取った事実だけを貯めているので、<b>発令が解除されたあとでも残ります</b>。当社の解釈は足していません。</p>
+
+<div class="panel">
+<form action="history" method="get">
+<label style="font-weight:700">住所</label>
+<div class="search" style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px"><input type="text" name="q" value="{{ q or '' }}" style="flex:1 1 260px;min-width:0;font-size:17px;padding:12px 14px;border:2px solid var(--line);border-radius:10px" placeholder="例: 愛知県名古屋市瑞穂区内浜町" required></div>
+<button class="btn" type="submit">記録を見る</button>
+</form>
+</div>
+
+{% if q and not gakku %}
+<div class="panel">
+<div class="card none"><div class="v">この住所の自治体は、発令をまだ取り込んでいません</div><div class="s">記録を残しているのは名古屋市だけです。取り込んでいない自治体は、市区町村の発表でご確認ください。</div></div>
+</div>
+{% elif gakku %}
+<div class="panel">
+<h2 style="margin-top:0">{{ gakku.ward }}{{ gakku.name }}学区の記録（{{ rows|length }}件）</h2>
+{% if rows %}
+<div class="tscroll"><table class="t">
+<tr><th>発令</th><th>警戒レベル</th><th>河川・種別</th><th>対象</th></tr>
+{% for r in rows %}<tr>
+<td>{{ (r.issued_at or r.first_seen or '')[:16]|replace('T',' ') }}</td>
+<td><span class="badge {{ 'red' if r.level>=4 else 'amber' }}">レベル{{ r.level }}・{{ r.kind }}</span></td>
+<td><a href="river/{{ r.slug }}/">{{ r.target }}</a></td>
+<td>{{ '区の全学区' if r.whole_ward else this_gakku }}</td>
+</tr>{% endfor %}
+</table></div>
+<p style="margin-top:12px"><a class="btn ghost" href="history?q={{ q|urlencode }}&amp;format=csv">CSVで取り出す</a> <a class="btn ghost" href="history?q={{ q|urlencode }}&amp;format=json">JSONで取り出す</a></p>
+{% else %}
+<div class="card none"><div class="v">この学区に出た発令は、記録の中にありません</div><div class="s">記録している範囲（下に書いています）の中に無かった、という意味です。</div></div>
+{% endif %}
+<p class="src">数えているのは「市の災害情報配信に出た発令」だけです。記録は{{ span.count }}件、{{ (span.since or '')[:10] }} から {{ (span.until or '')[:10] }} まで。同じ発令が続いているあいだは1件として扱い、最後に見た時刻を更新しています。出典: <a href="https://www.city.nagoya.jp/1000103.html" target="_blank" rel="noopener">名古屋市 災害情報配信</a>。</p>
+</div>
+<div class="panel">
+<h2 style="margin-top:0">この記録の使いみち</h2>
+<ul style="font-size:15px;line-height:1.9">
+<li><b>過ぎたあとに検証できます。</b> 9月8日の大雨では、植田川が16時30分にレベル3、17時55分にレベル5でした。85分です。同じことを、どの学区についても後から確かめられます。</li>
+<li><b>マイ・タイムラインの根拠になります。</b> 自分の学区に実際に何分で何が出たかが分かると、「何時に動くか」を決められます。<a href="timeline?q={{ q|urlencode }}">マイ・タイムラインを作る</a></li>
+<li><b>CSVとJSONで持ち出せます。</b> 町内会の記録、議会での質問、研究のどれにも、加工せずそのまま使える形で出します。</li>
+</ul>
+</div>
+{% endif %}
+{% endblock %}

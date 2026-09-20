@@ -30,6 +30,7 @@
 {% elif jm['items'] %}{{ jm['items']|map(attribute='name')|join('、') }}{% if jm.headline %}／{{ jm.headline }}{% endif %}
 {% else %}この枠は、出ていないときも出しています。取得できなかったときは、そのことを書きます。{% endif %}</small>
 </div>
+{% if res.alert and res.alert.gakku %}<p style="margin:8px 0 0"><a class="btn ghost" href="history?q={{ res.address|urlencode }}">この学区に、いつ何が出たかを見る</a></p>{% endif %}
 {% if jm.fetched_at %}<p class="src">{{ jm.fetched_at }} 取得{% if jm.status=='stale' %}（前回取得できた値）{% endif %}／出典: <a href="{{ jm.source_url }}" target="_blank" rel="noopener">{{ jm.source }}</a>{% if jm.report_at %}（{{ jm.report_at[:16]|replace('T',' ') }} 発表）{% endif %}</p>{% endif %}
 {% endif %}
 
@@ -47,6 +48,20 @@
 
 <h2>この住所の避難の基本</h2>
 <div class="pol {{ 'ok' if tl.policy.startswith('在宅') }}">{{ tl.policy }}<small>理由: {{ tl.why }}。判断の型は内閣府「避難情報に関するガイドライン」（令和8年3月改定）に合わせています。</small></div>
+
+{# ── 避難所の開設状況。**空でも枠を出す**。開いているかどうかは、場所の一覧とは別の情報。 ── #}
+<h2>いまの開設状況</h2>
+{% set lv = (tl.refuge or {}).get('live') %}
+{% if lv and lv.status in ('ok','stale') %}
+<div class="grid">
+<div class="card {{ 'lv2' if lv.summary and lv.summary.opened else 'none' }}"><div class="k">帰宅困難者向けの退避施設（{{ lv.area }}）</div><div class="v">{{ lv.summary.total }}施設中 {{ lv.summary.opened }}施設が開設</div><div class="s">{{ lv.updated_at }} 時点</div></div>
+<div class="card none"><div class="k">指定避難所・指定緊急避難場所</div><div class="v">開設状況は出せません</div><div class="s">市の公開レイヤが更新されていないため、未開設と表示すると危険です</div></div>
+</div>
+<p class="src">{{ lv.fetched_at }} 取得／出典: <a href="{{ lv.source_url }}" target="_blank" rel="noopener">{{ lv.source }}</a>。退避施設は<b>帰宅困難者が最大24時間滞在する場所</b>で、命を守るために逃げ込む指定緊急避難場所とは別のものです。<b>いま開いている避難所は、市区町村の発表で確かめてください。</b></p>
+{% else %}
+<div class="card none"><div class="v">この住所の自治体の開設状況は、まだ取り込んでいません</div><div class="s">開いていないという意味ではありません。市区町村の発表でご確認ください。</div></div>
+<p class="src">この枠は、取り込んでいない自治体でも出しています。空欄にして黙るより、<b>「分からない」と書くほうが安全</b>だからです。</p>
+{% endif %}
 
 {% if tl.refuge and tl.refuge['items'] %}<h2>近い避難先（{{ tl.refuge.hazard_label or '洪水' }}に対応している指定緊急避難場所）</h2>
 {# **レベル5では移動そのものが危険。** 徒歩○分だけ並べると「行けばよい」と読めてしまう #}
