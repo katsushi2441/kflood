@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% set nav = 'nagoya' %}
-{% block title %}名古屋市{{ w.name }}の洪水・内水ハザードマップと避難先｜いまの避難情報（学区別） | {{ site }}{% endblock %}
-{% block desc %}名古屋市{{ w.name }}の洪水・内水の浸水想定と、いま学区に出ている避難情報（警戒レベル）、氾濫時に対象となる河川、避難先の探し方。{{ gakku|length }}学区の一覧つき。住所を入れれば何メートル・何日浸かる想定かが分かります。{% endblock %}
+{% block title %}名古屋市{{ w.name }}の洪水・内水ハザードマップ｜住所を入れると浸水の深さが出ます{% endblock %}
+{% block desc %}{% if stats and stats.pct_depth05 >= 1 %}名古屋市{{ w.name }}は区の面積の約{{ stats.pct_depth05|round|int }}%が0.5m以上{% if stats.pct_depth3 >= 1 %}、約{{ stats.pct_depth3|round|int }}%が3m以上{% endif %}浸かる想定です。{% elif stats %}名古屋市{{ w.name }}は国の洪水浸水想定にほとんど入っていませんが、内水の浸水想定が区の約{{ stats.pct_naisui|round|int }}%にあります。{% else %}名古屋市{{ w.name }}の洪水・内水ハザードマップ。{% endif %}住所を入れると、その場所の浸水の深さ・継続時間・内水と、いま{{ w.name }}の学区に出ている避難情報を1件で返します。{% endblock %}
 {% block body %}
 <nav class="src" style="margin-bottom:8px"><a href="../../">住所で判定</a> › <a href="../">名古屋市</a> › {{ w.name }}</nav>
 <h1>名古屋市{{ w.name }}の洪水・内水ハザードマップと避難先</h1>
