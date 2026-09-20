@@ -15,6 +15,24 @@
 </div>
 {% if nw.acts %}<ul class="acts">{% for a in nw.acts %}<li>{{ a }}</li>{% endfor %}</ul>{% endif %}
 {% set al = res.alert %}
+{# ── いまの気象警報・注意報（気象庁）。**空でも枠を出す**。
+     発令（市区町村）と警報（気象庁）は出どころが違うので、行を分けて両方を常に見せる。 ── #}
+{% set jm = res.jma %}
+{% if jm %}
+{% set kind = jm['items']|map(attribute='kind')|list %}
+<div class="pol {{ 'ok' if jm.status in ('ok','stale') and not jm['items'] }}" style="margin-top:10px;{% if 'special' in kind %}border-color:var(--red);background:var(--red-l){% elif 'warning' in kind %}border-color:var(--amber);background:var(--amber-l){% elif jm.status not in ('ok','stale') %}border-color:var(--blue);background:var(--blue-l){% endif %}">
+{% if jm.status == 'uncovered' %}気象警報・注意報は、この住所の市区町村を特定できませんでした
+{% elif jm.status not in ('ok','stale') %}気象警報・注意報を取得できませんでした
+{% elif jm['items'] %}{{ jm.muni_name }}に{% if 'special' in kind %}特別警報{% elif 'warning' in kind %}警報{% else %}注意報{% endif %}が出ています
+{% else %}{{ jm.muni_name }}に気象警報・注意報は発表されていません{% endif %}
+<small>{% if jm.status == 'uncovered' %}お住まいの市区町村の発表でご確認ください。
+{% elif jm.status not in ('ok','stale') %}発表されていないという意味ではありません。気象庁のページで確認してください。
+{% elif jm['items'] %}{{ jm['items']|map(attribute='name')|join('、') }}{% if jm.headline %}／{{ jm.headline }}{% endif %}
+{% else %}この枠は、出ていないときも出しています。取得できなかったときは、そのことを書きます。{% endif %}</small>
+</div>
+{% if jm.fetched_at %}<p class="src">{{ jm.fetched_at }} 取得{% if jm.status=='stale' %}（前回取得できた値）{% endif %}／出典: <a href="{{ jm.source_url }}" target="_blank" rel="noopener">{{ jm.source }}</a>{% if jm.report_at %}（{{ jm.report_at[:16]|replace('T',' ') }} 発表）{% endif %}</p>{% endif %}
+{% endif %}
+
 {% if al and al.fetched_at %}<p class="src">{{ al.fetched_at }} 取得{% if al.status=='stale' %}（前回取得できた値）{% endif %}{% if al.source %}／出典: <a href="{{ al.source_url }}" target="_blank" rel="noopener">{{ al.source }}</a>{% endif %}。発令は3分ごとに取り直しています。<b>最終的な判断は市区町村の発表に従ってください。</b></p>{% endif %}
 
 <h2>この場所の想定</h2>

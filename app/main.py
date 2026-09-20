@@ -33,6 +33,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from fastapi.templating import Jinja2Templates
 
 from app import alerts as live_alerts
+from app import jma
 from app import siblings
 from app import nagoya
 from app.codes import (CATEGORY, COLLAPSE, DEPTH_ACTION, DEPTH_RANK, DURATION_RANK, LONG_DURATION_RANK, RIVER,
@@ -323,6 +324,9 @@ def check_point(lon, lat, title=''):
             for k, n, v, a, note in cur.fetchall():
                 out['datasets'].append(dict(key=k, name=n, vintage=v, attribution=a, note=note))
         out['alert'] = al
+        # 2.6) いまの気象警報・注意報（気象庁・全国）。発令（自治体）とは別の枠として常に出す。
+        # **空でも枠を返す**（港区の防災ポータルと同じ考え方。出ていないことを書けるようにする）。
+        out['jma'] = jma.status_for(title)
         # 重説の第三号（津波災害警戒区域）。愛知県分を収録している設置でだけ値が入る。
         out['tsunami_keikai'] = tsunami_keikai_at(cur, lon, lat, title)
 
@@ -1175,7 +1179,7 @@ def nagoya_ward(request: Request, slug: str):
             gmax[g] = max(gmax.get(g, 0), a['level'])
     return page(request, 'ward.html', w=w, live=live, gakku=gakku, walerts=walerts, gmax=gmax,
                 stats=_ward_stats(nagoya.CITY, w['name']), rivers=nagoya.rivers_for_ward(w['name']),
-                wm=wagamachi_for('23100'))
+                wm=wagamachi_for('23100'), jm=jma.status_for('愛知県' + nagoya.CITY + w['name']))
 
 
 @app.get('/river/{slug}/', response_class=HTMLResponse)

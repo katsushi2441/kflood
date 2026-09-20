@@ -17,6 +17,19 @@
 {% endif %}
 </div>
 <div class="panel">
+<h2 style="margin-top:0">いま名古屋市に出ている気象警報・注意報（気象庁）</h2>
+{% if jm and jm.status in ('ok','stale') %}
+{% set kind = jm['items']|map(attribute='kind')|list %}
+{% if jm['items'] %}
+<div class="grid">
+{% for it in jm['items'] %}<div class="card {{ 'lv3' if it.kind=='special' else 'lv2' if it.kind=='warning' else 'lv1' }}"><div class="k">{{ '特別警報' if it.kind=='special' else '警報' if it.kind=='warning' else '注意報' }}</div><div class="v" style="font-size:16px">{{ it.name }}</div></div>{% endfor %}
+</div>
+{% if jm.headline %}<p class="src">{{ jm.headline }}</p>{% endif %}
+{% else %}<div class="card none"><div class="v">現在、名古屋市に気象警報・注意報は発表されていません</div></div>{% endif %}
+<p class="src">{{ jm.fetched_at }} 取得{% if jm.status=='stale' %}（前回取得できた値）{% endif %}／出典: <a href="{{ jm.source_url }}" target="_blank" rel="noopener">{{ jm.source }}</a>{% if jm.report_at %}（{{ jm.report_at[:16]|replace('T',' ') }} 発表）{% endif %}。警報は市の避難情報とは別の枠です。<b>出ていないときも、この枠は出しています。</b></p>
+{% else %}<div class="note">気象警報・注意報を取得できませんでした。発表されていないという意味ではありません。<a href="https://www.jma.go.jp/bosai/warning/" target="_blank" rel="noopener">気象庁のページ</a>で確認してください。</div>{% endif %}
+</div>
+<div class="panel">
 <h2 style="margin-top:0">{{ w.name }}の学区一覧（{{ gakku|length }}学区）</h2>
 <div class="grid">
 {% for g in gakku %}{% set lv = gmax.get(g) %}
