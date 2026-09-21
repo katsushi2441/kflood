@@ -43,11 +43,20 @@ GSI_NAISUI_BANDS = [(0.0, 0.3, '0.3m未満'), (0.3, 0.5, '0.5m未満'), (0.5, 3.
                     (10.0, 20.0, '10.0m以上20.0m未満'), (20.0, 999.0, '20.0m以上')]
 
 
+# 国土数値情報 A49（高潮浸水想定区域）の区分。こちらも**下限**で保存している
+# （scripts/load_a49_takashio.py）。名古屋市版は実測のメートル値なので細かい区分で読めるが、
+# A49 は区分そのものなので、公表されている区分の語をそのまま出す。
+A49_TAKASHIO_BANDS = [(0.0, 0.3, '0.3m未満'), (0.3, 0.5, '0.3m以上0.5m未満'),
+                      (0.5, 1.0, '0.5m以上1m未満'), (1.0, 3.0, '1m以上3m未満'),
+                      (3.0, 5.0, '3m以上5m未満'), (5.0, 10.0, '5m以上10m未満'),
+                      (10.0, 20.0, '10m以上20m未満'), (20.0, 999.0, '20m以上')]
+
+
 def naisui_band(depth_m, scheme='fine'):
-    """深さ(m)→区分ラベル。scheme='gsi' は重ねるハザードマップの粗い区分で読む。"""
+    """深さ(m)→区分ラベル。'gsi'=重ねるハザードマップ、'a49'=国土数値情報の高潮の区分で読む。"""
     if depth_m is None:
         return None
-    bands = GSI_NAISUI_BANDS if scheme == 'gsi' else NAISUI_BANDS
+    bands = {'gsi': GSI_NAISUI_BANDS, 'a49': A49_TAKASHIO_BANDS}.get(scheme, NAISUI_BANDS)
     for lo, hi, label in bands:
         if lo <= depth_m < hi:
             return label

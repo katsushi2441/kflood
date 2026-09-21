@@ -34,6 +34,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from fastapi.templating import Jinja2Templates
 
 from app import alerts as live_alerts
+from app import alerts_ext
 from app import jma
 from app import siblings
 from app import nagoya
@@ -91,6 +92,31 @@ def limited(ip, per_min=20, bucket='check'):
 def client_ip(request: Request):
     return (request.headers.get('x-forwarded-for') or request.client.host or '').split(',')[0].strip()
 
+
+
+PREF_RE = re.compile(r'^(北海道|東京都|京都府|大阪府|.{2,3}?県)')
+
+
+def split_pref_city(addr):
+    """住所を 都道府県 と 市区町村 に割る。東京23区は区、政令市は区ではなく市まで。"""
+    if not addr:
+        return None, None
+    m = PREF_RE.match(addr)
+    if not m:
+        return None, None
+    pref = m.group(1)
+    rest = addr[len(pref):]
+    if pref == '東京都':
+        m2 = re.match(r'^(.+?[区市町村])', rest)
+        return pref, (m2.group(1) if m2 else None)
+    m2 = re.match(r'^(.+?市)', rest)
+    if m2:
+        return pref, m2.group(1)
+    m3 = re.match(r'^(?:.+?郡)?(.+?[町村])', rest)
+    if m3:
+        return pref, m3.group(1)
+    m4 = re.match(r'^(.+?区)', rest)
+    return pref, (m4.group(1) if m4 else None)
 
 def db():
     return psycopg2.connect(**DB)
@@ -255,27 +281,46 @@ def check_point(lon, lat, title=''):
         # 住所の文字列に名前が出てくるものを先に見る（豊山町のように市域に食い込む町を正しく選ぶ）
         order = [a for a in by_name if a in cands] + [a for a in cands if a not in by_name] + \
                 [a for a in by_name if a not in cands]
-        nai = dict(status='uncovered', area=None, depth_m=None, depth_label=None, minutes=None, minutes_label=None, scheme='fine')
+        nai = dict(status='uncovered', area=None, depth_m=None, depth_label=None, minutes=None,
+                   minutes_label=None, scheme='fine', duration_covered=True, ground_m=None)
         area = d = m = None
+        ground = None
+        # 面ではなく点群で持つ自治体がある（東京都の浸水予想区域図は11mメッシュの点）。
+        # **20m以内に点があるときだけ採る。** 遠くの点を拾うと区域の外を区域内にしてしまう。
+        near_sql = ('SELECT depth_m, ground_m, ST_Distance(geom::geography, PT::geography) AS md, dataset_key '
+                    'FROM naisui_points WHERE area=%s AND geom && ST_Expand(PT, 0.0004) '
+                    'ORDER BY geom <-> PT LIMIT 1').replace('PT', pt)
+        hit_key = None
         for cand in order:
             cur.execute(f'SELECT max(depth_m) FROM naisui_depth WHERE area=%s AND ST_Contains(geom, {pt})', (cand, lon, lat))
             dd = cur.fetchone()[0]
             cur.execute(f'SELECT max(minutes) FROM naisui_duration WHERE area=%s AND ST_Contains(geom, {pt})', (cand, lon, lat))
             mm = cur.fetchone()[0]
+            gg = None
+            if dd is None:
+                cur.execute(near_sql, (lon, lat, cand, lon, lat, lon, lat))
+                prow = cur.fetchone()
+                if prow and prow[2] is not None and prow[2] <= 20.0:
+                    dd, gg, hit_key = prow[0], prow[1], prow[3]
             if area is None:
-                area, d, m = cand, dd, mm     # どれも当たらなければ先頭を「範囲内だが浸水想定外」に使う
+                area, d, m, ground = cand, dd, mm, gg   # どれも当たらなければ先頭を「範囲内だが浸水想定外」に使う
             if dd is not None:
-                area, d, m = cand, dd, mm     # 面が当たったものを優先
+                area, d, m, ground = cand, dd, mm, gg   # 当たったものを優先
                 break
         if area:
             nai['area'] = area
             # 重ねるHM（画像タイル）は区分の下限しか持たないので、画面には区分の語だけを出す
             nai['scheme'] = 'gsi' if any(k.startswith('gsi_naisui_') for _a, ks in cov if _a == area for k in ks) else 'fine'
+            # 継続時間を持つデータと持たないデータがある。持っていない地域で「想定なし」と書くと、
+            # 水がすぐ引くように読めてしまうので「公表なし」と書き分ける
+            cur.execute('SELECT EXISTS(SELECT 1 FROM naisui_duration WHERE area=%s)', (area,))
+            nai['duration_covered'] = bool(cur.fetchone()[0])
+            nai['ground_m'] = round(float(ground), 2) if ground is not None else None
             nai.update(status='inside' if d is not None else 'outside', depth_m=(round(float(d), 2) if d is not None else None),
                        depth_label=naisui_band(float(d), 'gsi' if any(k.startswith('gsi_naisui_') for _a, ks in cov if _a == area for k in ks) else 'fine')
                        if d is not None else None,
                        minutes=(round(float(m)) if m is not None else None), minutes_label=minutes_label(m))
-            dk = [k for _, ks in cov if _ == area for k in ks]
+            dk = [hit_key] if hit_key else [k for _, ks in cov if _ == area for k in ks]
             cur.execute('SELECT key,name,data_vintage,attribution,note FROM datasets WHERE key = ANY(%s) ORDER BY key', (dk,))
             for k, n, v, a, note in cur.fetchall():
                 out['datasets'].append(dict(key=k, name=n, vintage=v, attribution=a, note=note))
@@ -283,25 +328,50 @@ def check_point(lon, lat, title=''):
 
         # 2.2) 高潮（自治体版）。洪水・内水と同じ「何メートル浸かるか」の問いなので、
         #      別サイトに分けず同じ画面に並べる。名古屋にとって高潮は伊勢湾台風の災害そのもの。
-        tks = dict(status='uncovered', area=None, depth_m=None, depth_label=None, hours=None)
+        tks = dict(status='uncovered', area=None, depth_m=None, depth_label=None, hours=None,
+                   duration_covered=False, scheme='fine')
         try:
-            cur.execute(f'SELECT area FROM takashio_coverage WHERE ST_Contains(geom, {pt}) LIMIT 1', (lon, lat))
-            trow = cur.fetchone()
-            tarea = trow[0] if trow else None
+            # **内水と同じで、収録範囲の矩形は重なる。** 都道府県版（A49）の矩形は隣県に食い込み、
+            # 東京都と千葉県の矩形は東京湾で重なる。住所の文字列に名前が出てくるものを先に見て、
+            # それから座標で当たったものを見る。LIMIT 1 で拾うと隣県のデータで判定してしまう。
+            cur.execute('SELECT area FROM takashio_coverage')
+            tcov = [r[0] for r in cur.fetchall()]
+            cur.execute(f'SELECT area FROM takashio_coverage WHERE ST_Contains(geom, {pt})', (lon, lat))
+            tcands = [r[0] for r in cur.fetchall()]
+            tby_name = [a for a in tcov if a and a in (title or '')]
+            torder = [a for a in tby_name if a in tcands] + [a for a in tcands if a not in tby_name] + \
+                     [a for a in tby_name if a not in tcands]
+            tarea = td = th = None
+            for cand in torder:
+                cur.execute(f'SELECT max(depth_m) FROM takashio_depth WHERE area=%s AND ST_Contains(geom, {pt})',
+                            (cand, lon, lat))
+                dd = cur.fetchone()[0]
+                cur.execute(f'SELECT max(hours) FROM takashio_duration WHERE area=%s AND ST_Contains(geom, {pt})',
+                            (cand, lon, lat))
+                hh = cur.fetchone()[0]
+                if tarea is None:
+                    tarea, td, th = cand, dd, hh   # どれも当たらなければ先頭を「範囲内だが浸水想定外」に使う
+                if dd is not None:
+                    tarea, td, th = cand, dd, hh   # 面が当たったものを優先
+                    break
             if tarea:
                 tks['area'] = tarea
-                cur.execute(f'SELECT max(depth_m) FROM takashio_depth WHERE area=%s AND ST_Contains(geom, {pt})',
-                            (tarea, lon, lat))
-                td = cur.fetchone()[0]
-                cur.execute(f'SELECT max(hours) FROM takashio_duration WHERE area=%s AND ST_Contains(geom, {pt})',
-                            (tarea, lon, lat))
-                th = cur.fetchone()[0]
+                # 継続時間を持つのは自治体版だけ（A49 には無い）。持っていない地域で
+                # 「継続時間なし」と「継続時間の公表なし」を混ぜない
+                cur.execute('SELECT EXISTS(SELECT 1 FROM takashio_duration WHERE area=%s)', (tarea,))
+                tks['duration_covered'] = bool(cur.fetchone()[0])
+                # A49（国土数値情報）は区分の下限しか持たない。名古屋市版の細かい区分で
+                # 表示すると、実際より細かく分かっているように見えてしまう
+                cur.execute('SELECT EXISTS(SELECT 1 FROM takashio_coverage '
+                            "WHERE area=%s AND dataset_keys && ARRAY['a49_takashio_13','a49_takashio_12'])", (tarea,))
+                tks['scheme'] = 'a49' if cur.fetchone()[0] else 'fine'
                 tks.update(status='inside' if td is not None else 'outside',
                            depth_m=(round(float(td), 2) if td is not None else None),
-                           depth_label=naisui_band(float(td)) if td is not None else None,
+                           depth_label=naisui_band(float(td), tks['scheme']) if td is not None else None,
                            hours=(round(float(th), 1) if th is not None else None))
-                cur.execute("SELECT key,name,data_vintage,attribution,note FROM datasets "
-                            "WHERE key LIKE %s ORDER BY key", ('%takashio%',))
+                cur.execute('SELECT d.key,d.name,d.data_vintage,d.attribution,d.note FROM datasets d '
+                            'JOIN takashio_coverage c ON d.key = ANY(c.dataset_keys) '
+                            'WHERE c.area=%s ORDER BY d.key', (tarea,))
                 for k, n, v, a, note in cur.fetchall():
                     out['datasets'].append(dict(key=k, name=n, vintage=v, attribution=a, note=note))
         except Exception:
@@ -309,12 +379,17 @@ def check_point(lon, lat, title=''):
             conn.rollback()
         out['takashio'] = tks
 
-        # 2.5) いま出ている避難情報（自治体版）。学区が引ける自治体だけ。取得失敗は「発令なし」と区別する。
-        al = dict(status='uncovered', gakku=None, items=[], max_level=None, fetched_at=None, source=None, source_url=None)
+        # 2.5) いま出ている避難情報。**取得失敗は「発令なし」と区別する。**
+        #   名古屋市 … 市の災害情報配信を学区単位で読む（gakku ポリゴンで学区を引く）
+        #   東京都・千葉県 … 都県が区市町村の発令を集約しているので、住所の町丁目・地区で突き合わせる
+        al = dict(status='uncovered', gakku=None, place=None, scope=None, items=[], max_level=None,
+                  fetched_at=None, source=None, source_url=None, nearby=[])
         cur.execute(f'SELECT ward, name, area FROM gakku WHERE ST_Contains(geom, {pt}) LIMIT 1', (lon, lat))
         gk = cur.fetchone()
         if gk:
             al['gakku'] = dict(ward=gk[0], name=gk[1], area=gk[2])
+            al['place'] = f'{gk[0]}{gk[1]}学区'
+            al['scope'] = 'gakku'
             data = get_live()
             al.update(status=data.get('status', 'unavailable'), fetched_at=data.get('fetched_at'), source=data.get('source'), source_url=data.get('source_url'))
             if data.get('items'):
@@ -324,6 +399,22 @@ def check_point(lon, lat, title=''):
             cur.execute("SELECT key,name,data_vintage,attribution,note FROM datasets WHERE key='nagoya_gakku'")
             for k, n, v, a, note in cur.fetchall():
                 out['datasets'].append(dict(key=k, name=n, vintage=v, attribution=a, note=note))
+        else:
+            apref, acity = split_pref_city(title)
+            data = alerts_ext.for_address(apref, acity, title) if apref else None
+            if data:
+                al['scope'] = 'area'
+                al['place'] = f'{apref}{acity}' if acity else apref
+                al.update(status=data.get('status', 'unavailable'), fetched_at=data.get('fetched_at'),
+                          source=data.get('source'), source_url=data.get('source_url'))
+                al['items'] = [dict(level=i['level'], label=i['label'], target=i.get('area') or '',
+                                    issued_at=i.get('issued_at'), households=i.get('households'),
+                                    people=i.get('people')) for i in data.get('items', [])]
+                al['max_level'] = max([i['level'] for i in al['items']], default=None)
+                # 自分の町丁目に出ていなくても、同じ市区町村に出ているものは知らせる
+                al['nearby'] = [dict(level=i['level'], label=i['label'], target=i.get('area') or '',
+                                     issued_at=i.get('issued_at'))
+                                for i in data.get('city_items', []) if i not in data.get('items', [])][:8]
         out['alert'] = al
         # 2.6) いまの気象警報・注意報（気象庁・全国）。発令（自治体）とは別の枠として常に出す。
         # **空でも枠を返す**（港区の防災ポータルと同じ考え方。出ていないことを書けるようにする）。
@@ -334,19 +425,29 @@ def check_point(lon, lat, title=''):
     # 3) 行動の目安と注意書き
     g, notes = out['guidance'], out['notes']
     al = out['alert']
+    # 発令の呼び名は自治体で違う。名古屋は学区、東京都・千葉県は町丁目や地区なので、
+    # place（表示用の場所名）を使って書き分ける
+    place = al.get('place') or (f"{al['gakku']['ward']}{al['gakku']['name']}学区" if al.get('gakku') else None)
     if al['status'] in ('ok', 'stale') and al['items']:
         top = al['items'][0]
-        g.append(f"【いま】{al['gakku']['ward']}{al['gakku']['name']}学区に 警戒レベル{top['level']}・{top['label']}（{top['target']}）が出ています"
+        where = place + (f"（{top['target']}）" if top.get('target') and al.get('scope') == 'area' else '')
+        target = f"（{top['target']}）" if top.get('target') and al.get('scope') != 'area' else ''
+        g.append(f"【いま】{where}に 警戒レベル{top['level']}・{top['label']}{target}が出ています"
                  + (f"（{top['issued_at'][5:16].replace('T', ' ')} 発令）" if top['issued_at'] else '') + '。'
                  + {5: '災害がすでに起きているか切迫しています。外に出ず、その場で命を守る行動（上階・近くの頑丈な建物の高い場所へ）。',
                     4: '危険な場所から全員避難。下の浸水想定が深い・長い・倒壊区域なら区域外へ、移動が危険なほど雨が強ければ上階へ。',
                     3: '高齢者・乳幼児・障害のある方は避難を開始。その他の人も準備を終えて、避難の判断を。'}.get(top['level'], ''))
         if al['status'] == 'stale':
-            notes.append('避難情報は市のページを取得できず、1時間以内の前回取得値を表示しています。最新は市の災害情報配信で確認してください。')
-    elif al['status'] in ('ok', 'stale') and al['gakku']:
-        g.append(f"【いま】{al['gakku']['ward']}{al['gakku']['name']}学区に、市の避難情報（警戒レベル3〜5）は出ていません（{al['fetched_at']} 取得）。")
+            notes.append('避難情報は配信元を取得できず、前回取得した値を表示しています。最新は出典のページで確認してください。')
+    elif al['status'] in ('ok', 'stale') and al.get('nearby'):
+        top = al['nearby'][0]
+        g.append(f"【いま】{place}のこの場所に避難情報は出ていませんが、同じ市区町村の"
+                 f"「{top['target']}」に 警戒レベル{top['level']}・{top['label']} が出ています"
+                 f"（{al['fetched_at']} 取得）。自分の地区が対象か、出典のページでも確かめてください。")
+    elif al['status'] in ('ok', 'stale') and place:
+        g.append(f"【いま】{place}に、避難情報（警戒レベル3〜5）は出ていません（{al['fetched_at']} 取得）。")
     elif al['status'] == 'unavailable':
-        notes.append('いまの避難情報（市の災害情報配信）を取得できませんでした。発令が無いという意味ではありません。市のページで確認してください。')
+        notes.append('いまの避難情報を取得できませんでした。発令が無いという意味ではありません。出典のページで確認してください。')
     if nat['status'] == 'uncovered':
         notes.append('この地点を含む1次メッシュの洪水データは取り込まれていません。「区域外」という意味ではありません。取り込み状況は healthz で確認できます。')
     else:
