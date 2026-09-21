@@ -13,6 +13,18 @@
     トップの表に「地域 / 市町村 / 発表時刻 / 種別」が並び、
     詳細 PUB_VF_Detail_Hinan?pid=... に「<市町村><地区>：<種別> 警戒レベルN 発令(時刻) 対象世帯数 対象人数」。
 
+  静岡県 https://www.bousai-portal.pref.shizuoka.jp/api/...
+    **JSON API が公開されている**（スクレイプ不要）。
+      /master/getCities            … 市町のID→名前（35件）
+      /evacuation/getSummaryList   … いま出ている発令（市町ID・発表時刻・種別・対象世帯/人数）
+      /evacuation/getReports       … 発令の理由と対象（guideLine「避難指示（土砂災害（特別）警戒区域）」）
+      /evacuation/getAreas         … 地区の一覧。**空のことが多い**（市町全体または区域指定の発令）
+
+  神奈川県 https://www.bousai.pref.kanagawa.jp/K_PUB_VF_HinanKankokuList
+    千葉県と**同じ基盤**だが、一覧は表ではなく <dl><a><dt>種別</dt><dd>日時 + 市区町村</dd></a></dl>。
+    詳細の書式もわずかに違い、**「避難指示 （警戒レベル４）」と括弧が付く**。対象世帯数は「－」のことが多い。
+    市区町村は政令市だと**区まで**入る（横浜市神奈川区）。町丁目単位で「宝町の一部（内水）（浸水害）」まで分かる。
+
 使うのは事実（区市町村・地区・発令区分・レベル・日時・対象世帯/人数）だけ。
 都県サイトの文章は転載しない。**取得できないときは「発令なし」と言わず「取得できない」と返す。**
 黙って安全側に倒さない。
@@ -23,7 +35,7 @@ import html
 import re
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import requests
 
@@ -77,18 +89,40 @@ def norm_area(s):
     return s
 
 
-def match_area(addr, area):
-    """住所 addr が、発令地区 area に当てはまるか。
+# 発令地区には但し書きが付く。「宝町の一部（内水）（浸水害）」「中央区（土砂災害警戒区域）【R8.5.29～】」。
+# 突き合わせるのは町名の部分だけだが、**「の一部」は町の一部しか対象でない**ので区別する。
+QUALIFIER = re.compile(r'[（(「【\[][^）)」】\]]*[)）」】\]]')
 
-    「全域」「市内全域」は市区町村が一致していればすべて当てはまる。
-    それ以外は地区名（町丁目）が住所に含まれるかで見る。
+
+def area_core(area):
+    """地区名から但し書きを落として、町丁目の部分だけ残す。"""
+    a = norm_area(area)
+    a = QUALIFIER.sub('', a)
+    a = re.sub(r'の一部.*$|地区$|付近$', '', a)
+    return a.strip('　 ・')
+
+
+def match_area(addr, area):
+    """住所 addr が発令地区 area に当てはまるか。'full' / 'partial' / False を返す。
+
+    「全域」「市内全域」は市区町村が一致していればすべて当てはまる（full）。
+    町名は一致するが対象が「その町の一部」のときは partial。
+    **partial を full と混ぜない。** 「あなたは避難指示の対象です」と言い切ってしまうため。
     """
     if not area:
         return False
     a = norm_area(area)
     if not a or '全域' in a or a in ('全市', '全区', '全町', '全村'):
-        return True
-    return norm_area(addr).find(a) >= 0
+        return 'full'
+    if '地区は' in a or '対象は' in a or '警戒区域' in a or '浸水想定' in a:
+        # 市区町村の一部だけが対象だが、どこかは自治体の地図でしか分からない
+        return 'partial'
+    core = area_core(area)
+    if not core or len(core) < 2:
+        return False
+    if norm_area(addr).find(core) < 0:
+        return False
+    return 'partial' if ('一部' in a or QUALIFIER.search(a)) else 'full' 
 
 
 def _get(url):
@@ -204,7 +238,7 @@ CHIBA_ITEM = re.compile(
     # 地区名には括弧が入る（中央区（土砂災害警戒区域）【R8.5.29～】）ので、括弧は除外しない。
     r'(?:^|。\s*|人\s+|\)\s+)(?P<area>[^：:。]{1,60}?)[：:]\s*'
     r'(?P<kind>緊急安全確保|避難指示|避難勧告|高齢者等避難|高齢避難|避難準備)\s*'
-    r'警戒レベル\s*(?P<lv>[0-9０-９])\s*'
+    r'[（(]?\s*警戒レベル\s*(?P<lv>[0-9０-９])\s*[)）]?\s*'
     r'(?P<state>発令|解除)\s*\(\s*(?P<at>[\d/]{8,10}\s+[\d:]{4,5})\s*\)'
     r'(?:[^。]{0,40}?対象世帯数[:：]?\s*(?P<hh>[\d,]+)\s*世帯)?'
     r'(?:[^。]{0,40}?対象人数[:：]?\s*(?P<pp>[\d,]+)\s*人)?')
@@ -256,7 +290,7 @@ def _fetch_chiba(city_filter):
     items, notes = [], []
     opened = 0
     for row in rows:
-        if city_filter and row['city'] != city_filter:
+        if city_filter and row['city'] and row['city'] != city_filter and row['city'] not in city_filter:
             continue
         if opened >= MAX_DETAIL:
             break
@@ -273,6 +307,195 @@ def _fetch_chiba(city_filter):
     items.sort(key=lambda x: (-x['level'], x['issued_at'] or ''))
     return dict(status='ok', items=items, notes=notes, source=CHIBA_NAME, source_url=CHIBA_TOP,
                 cities=sorted({r['city'] for r in rows if r['city']}))
+
+
+# ── 神奈川県 ──────────────────────────────────────────
+# **一覧が2つあり、役割が違う。**
+#   トップ（/）の「避難発令」タブ … *いま出ている* 市区町村と種別・発表時刻。ただし地区は載っていない
+#   /K_PUB_VF_HinanKankokuList    … その年度の *履歴*。詳細（地区）へのリンクがあるが、解除済みも混ざる
+# 履歴だけを読むと6月に解除された発令まで「いま出ている」ことにしてしまう（2026-09-21 実際にやった）。
+# だから **現況をトップで確定し、その発表時刻に一致する履歴の詳細だけ** を開いて地区を取る。
+KANAGAWA_TOP = 'https://www.bousai.pref.kanagawa.jp/'
+KANAGAWA_LIST = 'https://www.bousai.pref.kanagawa.jp/K_PUB_VF_HinanKankokuList'
+KANAGAWA_DETAIL = 'https://www.bousai.pref.kanagawa.jp/PUB_VF_Detail_Hinan?pid={pid}&type='
+KANAGAWA_NAME = '神奈川県災害情報ポータル'
+KANAGAWA_KIND = {'saigai': 5, 'shiji': 4, 'junbi': 3}
+
+
+def parse_kanagawa_top(text):
+    """トップの「避難発令」タブから、いま出ている (市区町村, 発表時刻 MM/DD HH:MM, レベル) を取る。"""
+    j = text.find('id="Hinan"')
+    if j < 0:
+        return []
+    seg = re.sub(r'<style.*?</style>|<script.*?</script>', '', text[j:j + 200000], flags=re.S)
+    out = []
+    for cell in re.split(r'<td class="tdL">', seg)[1:]:
+        mc = re.search(r'<a class="cityName"[^>]*>(.*?)</a>', cell, re.S)
+        if not mc:
+            continue
+        city = _clean_city(html.unescape(re.sub(r'<[^>]+>', '', mc.group(1))).strip())
+        head = cell[:cell.find('<td class="tdL">')] if '<td class="tdL">' in cell else cell
+        mt = re.search(r'(\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2})\s*発表', html.unescape(re.sub(r'<[^>]+>', ' ', head)))
+        levels = sorted({KANAGAWA_KIND[k] for k in KANAGAWA_KIND
+                         if re.search(r'class="kankokuWarning ' + k + r'"', head)}, reverse=True)
+        if city and levels:
+            out.append(dict(city=city, at=mt.group(1) if mt else None, levels=levels))
+    return out
+
+
+def parse_kanagawa_list(text):
+    """履歴一覧から (pid, 市区町村, 発表時刻 YYYY/MM/DD HH:MM) を取る。"""
+    out, seen = [], set()
+    for m in re.finditer(r'<a href="/PUB_VF_Detail_Hinan\?pid=([A-Za-z0-9]+)[^"]*">(.*?)</a>', text, re.S):
+        pid = m.group(1)
+        if pid in seen:
+            continue
+        seen.add(pid)
+        inner = re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]+>', ' ', m.group(2)))).strip()
+        mc = re.search(r'([^\s]{2,12}?[市区町村])\s*避難情報', inner)
+        mt = re.search(r'(\d{4}/\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2})', inner)
+        out.append(dict(pid=pid, city=_clean_city(mc.group(1)) if mc else None,
+                        at=mt.group(1) if mt else None))
+    return out
+
+
+def kanagawa(city_filter=None):
+    return _cached('kanagawa', lambda: _fetch_kanagawa(city_filter), city_filter)
+
+
+def _kanagawa_live():
+    # いま発令が出ている市区町村。**住所に関係なく1回だけ取る**（住所ごとに取り直さない）
+    return _cached('kanagawa_live', lambda: dict(status='ok', items=[], notes=[], cities=[],
+                                                 live=parse_kanagawa_top(_get(KANAGAWA_TOP)),
+                                                 source=KANAGAWA_NAME, source_url=KANAGAWA_TOP))
+
+
+def _kanagawa_hist():
+    return _cached('kanagawa_hist', lambda: dict(status='ok', items=[], notes=[], cities=[],
+                                                 hist=parse_kanagawa_list(_get(KANAGAWA_LIST)),
+                                                 source=KANAGAWA_NAME, source_url=KANAGAWA_LIST))
+
+
+def _fetch_kanagawa(addr):
+    live = _kanagawa_live().get('live') or []
+    if addr:
+        live = [r for r in live if r['city'] and r['city'] in addr]
+    if not live:
+        return dict(status='ok', items=[], notes=[], source=KANAGAWA_NAME, source_url=KANAGAWA_TOP, cities=[])
+    hist = _kanagawa_hist().get('hist') or []
+    items, notes = [], []
+    opened = 0
+    for row in live:
+        # 履歴の中から、同じ市区町村で発表時刻が一致するものを探す（MM/DD HH:MM で突き合わせる）
+        pid = None
+        for h in hist:
+            if h['city'] == row['city'] and h['at'] and row['at'] and h['at'][5:] == row['at']:
+                pid = h['pid']
+                break
+        if pid and opened < MAX_DETAIL:
+            opened += 1
+            try:
+                it, nt = parse_chiba_detail(_get(KANAGAWA_DETAIL.format(pid=pid)), row['city'])
+            except Exception:
+                it, nt = [], []
+            for x in it:
+                x['city'] = row['city']
+            if it:
+                items += it
+                notes += nt
+                continue
+        # 地区まで分からないときは、市区町村ぜんぶを対象として返す。**黙って落とさない。**
+        for lv in row['levels']:
+            items.append(dict(city=row['city'], area='地区は県のページで確認', level=lv,
+                              label=LEVEL_LABEL.get(lv, ''), issued_at=None,
+                              households=None, people=None, whole_city=True))
+    items.sort(key=lambda x: (-x['level'], x['issued_at'] or ''))
+    return dict(status='ok', items=items, notes=notes, source=KANAGAWA_NAME, source_url=KANAGAWA_TOP,
+                cities=sorted({r['city'] for r in live if r['city']}))
+
+
+# ── 静岡県 ────────────────────────────────────────────
+SHIZUOKA_API = 'https://www.bousai-portal.pref.shizuoka.jp/api'
+SHIZUOKA_NAME = '静岡県防災ポータル'
+SHIZUOKA_URL = 'https://www.bousai-portal.pref.shizuoka.jp/evacuation'
+
+
+def _json(url):
+    r = requests.get(url, headers=UA, timeout=TIMEOUT)
+    r.raise_for_status()
+    return r.json()
+
+
+def _shizuoka_cities():
+    # 市町の ID→名前。1日に何度も変わるものではないが、他と同じ3分キャッシュで足りる
+    def fetch():
+        d = _json(f'{SHIZUOKA_API}/master/getCities')
+        m = {}
+        for grp in d.get('records', []):
+            for c in grp.get('cities', []):
+                m[c['id']] = c['name']
+        return dict(status='ok', items=[], notes=[], cities=[], cmap=m,
+                    source=SHIZUOKA_NAME, source_url=SHIZUOKA_URL)
+    return _cached('shizuoka_cities', fetch)
+
+
+def shizuoka(city_filter=None):
+    return _cached('shizuoka', lambda: _fetch_shizuoka(city_filter), city_filter)
+
+
+def _fetch_shizuoka(addr):
+    cmap = _shizuoka_cities().get('cmap') or {}
+    summary = _json(f'{SHIZUOKA_API}/evacuation/getSummaryList').get('records', [])
+    items, notes = [], []
+    opened = 0
+    for r in summary:
+        city = cmap.get(r.get('organizationId')) or ''
+        if addr and city and city not in addr:
+            continue
+        # 対象の区域は getAreas に入っていることもあるが、**空のことが多い**。
+        # そのときは getReports の guideLine（「避難指示（土砂災害（特別）警戒区域）」）を使う。
+        area = ''
+        if opened < MAX_DETAIL:
+            opened += 1
+            try:
+                areas = _json(f'{SHIZUOKA_API}/evacuation/getAreas?evacuationId={r["id"]}').get('records', [])
+                area = '・'.join(a.get('name') or '' for a in areas if a.get('name'))
+            except Exception:
+                areas = []
+            if not area:
+                try:
+                    reps = _json(f'{SHIZUOKA_API}/evacuation/getReports'
+                                 f'?organizationId={r["organizationId"]}').get('records', [])
+                    rep = next((x for x in reps if x.get('id') == r['id']), (reps[0] if reps else None))
+                    area = (rep or {}).get('guideLine') or ''
+                except Exception:
+                    pass
+        for kind in (r.get('announceTypes') or []):
+            lv = _level_of(kind)
+            if lv is None:
+                notes.append(f'{city} {kind}')
+                continue
+            limited = bool(re.search(r'警戒区域|浸水想定|区域|地区|沿い|流域', area))
+            items.append(dict(city=city, area=area or '対象は県のページで確認', level=lv,
+                              label=LEVEL_LABEL.get(lv, kind), issued_at=_jst_iso(r.get('reportDateTime')),
+                              households=r.get('cityHousehold'), people=r.get('cityPeople'),
+                              # **市町単位の発令。** どの地区かは県のAPIに入っていないので、
+                              # 住所での突き合わせはせず、市町が一致すれば該当とする
+                              city_wide=True, limited=limited))
+    items.sort(key=lambda x: (-x['level'], x['issued_at'] or ''))
+    return dict(status='ok', items=items, notes=notes, source=SHIZUOKA_NAME, source_url=SHIZUOKA_URL,
+                cities=sorted({cmap.get(r.get('organizationId')) for r in summary if cmap.get(r.get('organizationId'))}))
+
+
+def _jst_iso(t):
+    """API は UTC（…Z）で返す。表示は日本時間なので +9 する。"""
+    if not t:
+        return None
+    try:
+        dt = datetime.strptime(t[:19], '%Y-%m-%dT%H:%M:%S') + timedelta(hours=9)
+        return dt.isoformat(timespec='minutes')
+    except ValueError:
+        return None
 
 
 # ── 共通 ──────────────────────────────────────────────
@@ -309,10 +532,31 @@ def for_address(pref, city, address):
         data = tokyo(city_filter=city)
     elif pref == '千葉県':
         data = chiba(city_filter=city)
+    elif pref == '神奈川県':
+        data = kanagawa(city_filter=address)
+    elif pref == '静岡県':
+        data = shizuoka(city_filter=address)
     else:
         return None
+    # **市区町村名は「住所に含まれるか」で見る。** 政令市では都県側が「横浜市神奈川区」と
+    # 区まで書くのに、住所の分割は「横浜市」までしか返さない。等号で比べると全部外れる。
+    def same_city(i):
+        c = i.get('city')
+        return (not c) or (c in (address or '')) or (city and (c == city or c.startswith(city)))
     out = dict(data)
-    out['items'] = [i for i in data.get('items', [])
-                    if (not i.get('city') or i['city'] == city) and match_area(address, i.get('area'))]
-    out['city_items'] = [i for i in data.get('items', []) if not i.get('city') or i['city'] == city]
+    hit = []
+    for i in data.get('items', []):
+        if not same_city(i):
+            continue
+        if i.get('city_wide') or i.get('whole_city'):
+            # 市区町村ぜんぶが対象（またはどの地区かが公表データに無い）。地区では絞らない
+            m = 'partial' if i.get('limited') or i.get('whole_city') else 'full'
+        else:
+            m = match_area(address, i.get('area'))
+        if m:
+            x = dict(i)
+            x['partial'] = (m == 'partial')
+            hit.append(x)
+    out['items'] = hit
+    out['city_items'] = [i for i in data.get('items', []) if same_city(i)]
     return out

@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block title %}洪水・内水ハザードマップ｜住所で何メートル何日浸かるか調べる{% endblock %}
-{% block desc %}住所を入れると、洪水（河川の氾濫）と内水（下水道・水路からの浸水）で何メートル・何日浸かる想定かを、家屋倒壊等氾濫想定区域と立退き避難の目安つきで返します。洪水は全国、内水と高潮は東京都・千葉県・名古屋市、いま出ている避難情報も同じ3地域。データ時点と出典つき。{% endblock %}
+{% block desc %}住所を入れると、洪水（河川の氾濫）と内水（下水道・水路からの浸水）で何メートル・何日浸かる想定かを、家屋倒壊等氾濫想定区域と立退き避難の目安つきで返します。洪水は全国、内水・高潮は東京都・千葉県・神奈川県・名古屋市、いま出ている避難情報は東京都・千葉県・神奈川県・静岡県・名古屋市。データ時点と出典つき。{% endblock %}
 {% set nav = 'home' %}
 {% block body %}
 <h1>住所を入れると、洪水と内水で「何メートル・何日」浸かる想定かが分かります</h1>
-<p class="lead">国の洪水浸水想定区域（想定最大規模・計画規模・浸水継続時間・家屋倒壊等氾濫想定区域）は<b>全国</b>、内水・高潮・いま出ている避難情報は<b>東京都・千葉県・名古屋市</b>を、住所ひとつで同時に照らします。判定にはデータの時点と出典を必ず添え、<b>収録していない場所は「未収録」と書きます</b>（区域外とは区別します）。</p>
+<p class="lead">国の洪水浸水想定区域（想定最大規模・計画規模・浸水継続時間・家屋倒壊等氾濫想定区域）は<b>全国</b>。これに加えて、内水と高潮は<b>東京都・千葉県・神奈川県・名古屋市</b>、いま出ている避難情報は<b>東京都・千葉県・神奈川県・静岡県・名古屋市</b>を、住所ひとつで同時に照らします（<b>地域によって入っているものが違います</b>。静岡県は避難情報のみ、千葉県の内水は5市町のみ）。判定にはデータの時点と出典を必ず添え、<b>収録していない場所は「未収録」と書きます</b>（区域外とは区別します）。</p>
 <div class="panel">
 <form class="search" id="f" onsubmit="return go()">
 <input type="text" id="q" placeholder="例: 愛知県名古屋市中川区富田町大字千音寺" autocomplete="street-address" required>
@@ -18,6 +18,8 @@
 <a href="#" onclick="return ex('東京都江戸川区中央1-4-1')">江戸川区（洪水・内水・高潮）</a>
 <a href="#" onclick="return ex('東京都台東区池之端1-1-1')">台東区 池之端</a>
 <a href="#" onclick="return ex('千葉県船橋市湊町2-10-25')">船橋市（洪水・内水・高潮）</a>
+<a href="#" onclick="return ex('神奈川県川崎市川崎区宮本町1')">川崎市（高潮）</a>
+<a href="#" onclick="return ex('静岡県熱海市中央町1-1')">熱海市（いまの避難情報）</a>
 <a href="#" onclick="return ex('岐阜県大垣市丸の内2丁目')">大垣市（洪水のみ）</a>
 </div>
 </div>
@@ -31,9 +33,9 @@
 <h2 style="margin-top:0">返ってくるもの</h2>
 <div class="steps">
 <div class="step"><b>洪水（河川の氾濫）</b><strong>浸水深と継続時間</strong>想定最大規模・計画規模それぞれの浸水深ランク、水が引くまでの日数、家屋倒壊等氾濫想定区域の区分</div>
-<div class="step"><b>内水（下水道・水路）</b><strong>浸水深と継続時間</strong>河川が氾濫しなくても起きる浸水。東京都（都の浸水予想区域図・約11mメッシュ）、名古屋市（市のオープンデータ）、千葉県の5市町ほか（重ねるハザードマップ）で判定</div>
+<div class="step"><b>内水（下水道・水路）</b><strong>浸水深と継続時間</strong>河川が氾濫しなくても起きる浸水。東京都（都の浸水予想区域図・約11mメッシュ）、名古屋市（市のオープンデータ）、千葉県・神奈川県の掲載市町（重ねるハザードマップ）で判定</div>
 <div class="step"><b>行動の目安</b><strong>立退きか、上の階か</strong>深さ・継続時間・倒壊区域から、垂直避難で足りるかを示す。世帯条件を足せばマイ・タイムラインに</div>
-<div class="step"><b>いまの避難情報</b><strong>この住所に出ている警戒レベル</strong>名古屋市は学区、東京都は町丁目、千葉県は地区の単位で、いま出ている警戒レベル3〜5を添える（取得できない時は「取得できません」と書き、発令なしとは区別する）</div>
+<div class="step"><b>いまの避難情報</b><strong>この住所に出ている警戒レベル</strong>名古屋市は学区、東京都は町丁目、千葉県・神奈川県は地区、静岡県は市町の単位で、いま出ている警戒レベル3〜5を添える。<b>対象がその町の一部のときは、そう書く</b>（取得できない時は「取得できません」と書き、発令なしとは区別する）</div>
 <div class="step"><b>データ時点</b><strong>いつのデータで判定したか</strong>時点を確認できないデータでは判定しない。未収録と区域外を区別する</div>
 </div>
 </div>
@@ -73,8 +75,9 @@ function render(j){
       h+='<div class="card"><div class="k">'+esc(a.place)+'</div><div class="v">取得できません</div><div class="s">発令が無いという意味ではありません。'+src+'で確認してください</div></div>';
     } else if(a.items&&a.items.length){
       var t=a.items[0];
-      h+='<div class="card '+(t.level>=4?'lv3':'lv2')+'"><div class="k">'+esc(a.place)+'</div><div class="v">警戒レベル'+t.level+'・'+esc(t.label)+'</div><div class="s">'
+      h+='<div class="card '+(t.level>=4?'lv3':'lv2')+'"><div class="k">'+esc(a.place)+'</div><div class="v">警戒レベル'+t.level+'・'+esc(t.label)+(t.partial?'<span style="font-size:13px;font-weight:400">（この町の一部が対象）</span>':'')+'</div><div class="s">'
        + esc(a.items.map(function(i){return '['+i.level+'] '+i.label+(i.target?'（'+i.target+'）':'')+(i.issued_at?' '+i.issued_at.slice(5,16).replace('T',' '):'')+(i.people?' 対象'+i.people.toLocaleString()+'人':'')}).join(' / '))
+       + (t.partial?'<br><b>対象はその町の一部です。</b>どこが対象かは自治体の地図で確かめてください。':'')
        + '<br>'+esc(a.fetched_at)+' 取得'+(a.status==='stale'?'（前回値）':'')+' / '+src+'</div></div>';
     } else if(a.nearby&&a.nearby.length){
       // 自分の地区は対象外でも、同じ市区町村に出ているものは必ず見せる

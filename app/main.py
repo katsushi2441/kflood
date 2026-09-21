@@ -404,12 +404,17 @@ def check_point(lon, lat, title=''):
             data = alerts_ext.for_address(apref, acity, title) if apref else None
             if data:
                 al['scope'] = 'area'
-                al['place'] = f'{apref}{acity}' if acity else apref
+                # 政令市では都県側が区まで書く（横浜市神奈川区）。住所の分割は市までしか返さないので、
+                # 発令に付いている市区町村名のほうが細かければそちらを使う
+                cities = {i.get('city') for i in (data.get('city_items') or []) if i.get('city')}
+                fine = next((c for c in cities if acity and c.startswith(acity) and len(c) > len(acity)), None)
+                al['place'] = f'{apref}{fine or acity or ""}'
                 al.update(status=data.get('status', 'unavailable'), fetched_at=data.get('fetched_at'),
                           source=data.get('source'), source_url=data.get('source_url'))
                 al['items'] = [dict(level=i['level'], label=i['label'], target=i.get('area') or '',
                                     issued_at=i.get('issued_at'), households=i.get('households'),
-                                    people=i.get('people')) for i in data.get('items', [])]
+                                    people=i.get('people'), partial=bool(i.get('partial')))
+                               for i in data.get('items', [])]
                 al['max_level'] = max([i['level'] for i in al['items']], default=None)
                 # 自分の町丁目に出ていなくても、同じ市区町村に出ているものは知らせる
                 al['nearby'] = [dict(level=i['level'], label=i['label'], target=i.get('area') or '',
@@ -432,8 +437,12 @@ def check_point(lon, lat, title=''):
         top = al['items'][0]
         where = place + (f"（{top['target']}）" if top.get('target') and al.get('scope') == 'area' else '')
         target = f"（{top['target']}）" if top.get('target') and al.get('scope') != 'area' else ''
+        # **「その町の一部」が対象の発令を、町全部が対象のように書かない。**
+        # 自治体は「宝町の一部（内水）」のように区切って出しているので、そこは自治体の地図で確かめてもらう。
+        partial = ' この発令の対象は、その町の一部です（どこが対象かは自治体の地図で確かめてください）。' if top.get('partial') else ''
         g.append(f"【いま】{where}に 警戒レベル{top['level']}・{top['label']}{target}が出ています"
                  + (f"（{top['issued_at'][5:16].replace('T', ' ')} 発令）" if top['issued_at'] else '') + '。'
+                 + partial
                  + {5: '災害がすでに起きているか切迫しています。外に出ず、その場で命を守る行動（上階・近くの頑丈な建物の高い場所へ）。',
                     4: '危険な場所から全員避難。下の浸水想定が深い・長い・倒壊区域なら区域外へ、移動が危険なほど雨が強ければ上階へ。',
                     3: '高齢者・乳幼児・障害のある方は避難を開始。その他の人も準備を終えて、避難の判断を。'}.get(top['level'], ''))
