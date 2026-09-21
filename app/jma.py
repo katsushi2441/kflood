@@ -30,6 +30,12 @@ SOURCE_URL = 'https://www.jma.go.jp/bosai/warning/'
 UA = {'User-Agent': 'kflood/1.0 (kurage.exbridge.jp; jma)'}
 CACHE_SEC = 180
 AREA_MAX_AGE = 7 * 24 * 3600
+# 発表中の項目があるのに、この時間より長く更新が無い報は「いま」と呼ばない。
+# **注意報も警報も無い状態なら、最後の解除報が何か月前でも正しい**ので、古いこと自体は問題にしない。
+# 問題は「発表中のまま更新が止まっている」ほう（2026-09-22 実測: 気象庁の warning JSON が
+# 全都道府県 5月末の Last-Modified のまま止まっていて、5/28の濃霧注意報を『いま出ている』と
+# 表示していた。予報 JSON は当日で生きているので、こちらの配信だけが止まっている）。
+REPORT_MAX_AGE_H = 24
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AREA_PATH = os.path.join(ROOT, 'data', 'jma_area.json')
 
@@ -177,7 +183,8 @@ def status_for(address: str):
             uncovered（市区町村を特定できない）
     """
     base = dict(status='uncovered', muni=None, muni_name=None, items=[], headline='',
-                fetched_at=None, report_at=None, source=SOURCE_NAME, source_url=SOURCE_URL, office=None)
+                fetched_at=None, report_at=None, source=SOURCE_NAME, source_url=SOURCE_URL, office=None,
+                report_age_h=None, source_outdated=False)
     m = muni_for_address(address or '')
     if not m:
         return base
@@ -190,7 +197,25 @@ def status_for(address: str):
                 headline=d.get('headline') or '', office_name=d.get('office_name'))
     if d.get('status') in ('ok', 'stale'):
         base['items'] = _items_for(d.get('raw'), m['code'])
+    base['report_age_h'] = _report_age_h(base.get('report_at'))
+    # 発表中の項目があるのに更新が止まっている報は「いま」と言わない。
+    # 本文（headline）は「28日夜遅くまで」のような期限つきの文なので、古いときは出さない。
+    if base['items'] and base['report_age_h'] is not None and base['report_age_h'] > REPORT_MAX_AGE_H:
+        base['source_outdated'] = True
+        base['headline'] = ''
     return base
+
+
+def _report_age_h(report_at):
+    """発表時刻から何時間たったか。読めなければ None（古いと決めつけない）。"""
+    if not report_at:
+        return None
+    try:
+        t = datetime.fromisoformat(report_at)
+    except ValueError:
+        return None
+    now = datetime.now(t.tzinfo) if t.tzinfo else datetime.now()
+    return max(0.0, (now - t).total_seconds() / 3600.0)
 
 
 def max_kind(items):

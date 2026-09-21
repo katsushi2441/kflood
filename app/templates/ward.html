@@ -17,10 +17,13 @@
 {% endif %}
 </div>
 <div class="panel">
-<h2 style="margin-top:0">いま名古屋市に出ている気象警報・注意報（気象庁）</h2>
+<h2 style="margin-top:0">名古屋市の気象警報・注意報（気象庁）</h2>
 {% if jm and jm.status in ('ok','stale') %}
 {% set kind = jm['items']|map(attribute='kind')|list %}
-{% if jm['items'] %}
+{% if jm.source_outdated %}
+{# 発表中の項目があるのに気象庁の配信が止まっている。**「いま出ている」とは書かない。** #}
+<div class="note">気象庁の配信が {{ jm.report_at[:16]|replace('T',' ') }}（{{ (jm.report_age_h/24)|round(0,'floor')|int }}日前）で止まっているため、<b>いま名古屋市に出ている警報・注意報は分かりません</b>。最後に取れた内容は「{{ jm['items']|map(attribute='name')|join('、') }}」ですが、すでに解除されている可能性が高いので、これを現在の状況として表示しません。<a href="https://www.jma.go.jp/bosai/warning/" target="_blank" rel="noopener">気象庁のページ</a>で最新をご確認ください。</div>
+{% elif jm['items'] %}
 <div class="grid">
 {% for it in jm['items'] %}<div class="card {{ 'lv3' if it.kind=='special' else 'lv2' if it.kind=='warning' else 'lv1' }}"><div class="k">{{ '特別警報' if it.kind=='special' else '警報' if it.kind=='warning' else '注意報' }}</div><div class="v" style="font-size:16px">{{ it.name }}</div></div>{% endfor %}
 </div>
