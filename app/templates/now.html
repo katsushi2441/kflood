@@ -20,11 +20,11 @@
 {% set jm = res.jma %}
 {% if jm %}
 {% set kind = jm['items']|map(attribute='kind')|list %}
-<div class="pol {{ 'ok' if jm.status in ('ok','stale') and not jm['items'] and not jm.source_outdated }}" style="margin-top:10px;{% if jm.source_outdated %}border-color:var(--blue);background:var(--blue-l){% elif 'special' in kind %}border-color:var(--red);background:var(--red-l){% elif 'warning' in kind %}border-color:var(--amber);background:var(--amber-l){% elif jm.status not in ('ok','stale') or jm.source_outdated %}border-color:var(--blue);background:var(--blue-l){% endif %}">
+<div class="pol {{ 'ok' if jm.status in ('ok','stale') and not jm['items'] and not jm.source_outdated }}" style="margin-top:10px;{% if jm.source_outdated %}border-color:var(--blue);background:var(--blue-l){% elif 'special' in kind or 'danger' in kind %}border-color:var(--red);background:var(--red-l){% elif 'warning' in kind %}border-color:var(--amber);background:var(--amber-l){% elif jm.status not in ('ok','stale') or jm.source_outdated %}border-color:var(--blue);background:var(--blue-l){% endif %}">
 {% if jm.status == 'uncovered' %}気象警報・注意報は、この住所の市区町村を特定できませんでした
 {% elif jm.status not in ('ok','stale') %}気象警報・注意報を取得できませんでした
 {% elif jm.source_outdated %}気象庁の配信が止まっているため、いまの警報・注意報は分かりません
-{% elif jm['items'] %}{{ jm.muni_name }}に{% if 'special' in kind %}特別警報{% elif 'warning' in kind %}警報{% else %}注意報{% endif %}が出ています
+{% elif jm['items'] %}{{ jm.muni_name }}に{% if 'special' in kind %}特別警報{% elif 'danger' in kind %}危険警報{% elif 'warning' in kind %}警報{% else %}注意報{% endif %}が出ています
 {% else %}{{ jm.muni_name }}に気象警報・注意報は発表されていません{% endif %}
 <small>{% if jm.status == 'uncovered' %}お住まいの市区町村の発表でご確認ください。
 {% elif jm.status not in ('ok','stale') %}発表されていないという意味ではありません。気象庁のページで確認してください。
