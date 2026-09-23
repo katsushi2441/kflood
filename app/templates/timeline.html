@@ -6,6 +6,7 @@ table.tl{width:100%;border-collapse:collapse;font-size:14.5px}table.tl th,table.
 table.tl td ul{margin:0;padding-left:18px}table.tl td li{margin:3px 0}
 .pol{background:var(--red-l);border-left:5px solid var(--red);padding:12px 14px;border-radius:8px;font-size:17px;font-weight:800;color:var(--red)}.pol.ok{background:var(--teal-l);border-color:var(--teal);color:var(--teal-d)}.pol small{display:block;font-weight:600;font-size:13.5px;color:var(--ink);margin-top:4px}
 @media (max-width:600px){table.tl th,table.tl td{display:block;width:auto}table.tl th{border-bottom:0}}
+ol.b7{margin:0;padding-left:22px}ol.b7 li{display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}ol.b7 li span{flex:1}ol.b7 button.mv{border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 10px;font:inherit;cursor:pointer}
 {% endblock %}
 {% block body %}
 <div class="noprint" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
@@ -32,12 +33,26 @@ table.tl td ul{margin:0;padding-left:18px}table.tl td li{margin:3px 0}
 <h2>避難の方針</h2>
 <div class="pol {{ 'ok' if tl.policy.startswith('在宅') }}">{{ tl.policy }}<small>理由: {{ tl.why }}。最終的には市区町村の避難情報に従ってください。</small></div>
 <h2>いつ・何をするか</h2>
+<p class="src">左の列は、国土交通省「マイ・タイムライン」の時間軸（台風発生の3日前→前日→半日前→氾濫の5〜3時間前→氾濫）と、内閣府ガイドラインの警戒レベルを同じ行に置いたものです。川の水位で読んでも、市区町村の発令で読んでも、同じ行に着きます。</p>
 <div class="tscroll"><table class="tl">
 {% for lv in tl.levels %}
-<tr><th>{{ lv[0] }}<br><span class="badge {{ 'red' if loop.index>=3 else 'amber' if loop.index==2 else '' }}">{{ lv[1] }}</span><br><span class="src">{{ lv[2] }}</span></th>
+<tr><th>{{ lv[0] }}<br><span class="badge {{ 'red' if loop.index>=4 else 'amber' if loop.index==3 else '' }}">{{ lv[1] }}</span><br><span class="src">{{ lv[2] }}<br>{{ lv[3] }}</span></th>
 <td><ul>{% for a in tl.rows[loop.index0] %}<li>{{ a }}</li>{% endfor %}</ul></td></tr>
 {% endfor %}
 </table></div>
+
+<h2>洪水時の7つの基本行動を、自分の順番に並べる</h2>
+<p class="src">国土交通省の様式にある7つです。最後の2つ（安全なところへ移動を始める・避難完了）は決まっていて、残り5つの順番を自分で決めます。▲▼で並べ替えると、印刷にもその順番で出ます。書いた紙より、自分で並べた順番のほうが当日思い出せます。</p>
+<div class="panel"><ol id="basic7" class="b7">
+{% for a in tl.basic7 %}<li><span>{{ a }}</span>{% if loop.index <= 5 %}<button type="button" class="mv noprint" data-d="-1" aria-label="上へ">▲</button><button type="button" class="mv noprint" data-d="1" aria-label="下へ">▼</button>{% endif %}</li>
+{% endfor %}
+</ol>
+<script>(function(){var ol=document.getElementById('basic7');ol.addEventListener('click',function(e){var b=e.target.closest('button.mv');if(!b)return;var li=b.parentNode,d=parseInt(b.dataset.d,10);var items=[].slice.call(ol.children).slice(0,5);var i=items.indexOf(li),j=i+d;if(i<0||j<0||j>4)return;if(d<0)ol.insertBefore(li,items[j]);else ol.insertBefore(items[j],li);});})();</script>
+</div>
+
+<h2>なぜ時間軸で決めておくのか</h2>
+<div class="panel"><p>洪水は地震と違って、段階があります。台風が発生してから氾濫までには、進路が分かる日（3日前ごろ）、雨風が強まる日（前日）、川の水位が上がる時間帯（半日前）、堤防からあふれそうになる時間帯（5〜3時間前）があり、市区町村の「高齢者等避難」「避難指示」はその途中で出ます。段階があるから、あらかじめ「どの段階で何をするか」を決めておけます。上の表は、この住所の浸水想定と世帯の条件から、その段階ごとの行動を機械的に埋めたものです。<b>決めるのはご家族です。</b>下の書き込み欄に、避難先と集合場所と連絡方法を書いて、冷蔵庫に貼ってください。</p>
+<p class="src">国土交通省「Webでマイ・タイムライン」（関東地方整備局）には、段階の解説動画とクイズ、自分で書き込むシートがあります。この表をそのシートに写すと、国の様式で残せます。<a href="https://www.ktr.mlit.go.jp/river/bousai/mytimeline/" target="_blank" rel="noopener">Webでマイ・タイムライン</a></p></div>
 {% if tl.refuge and tl.refuge['items'] %}<h2>近い避難先（{{ tl.refuge.hazard_label or '洪水' }}に対応している指定緊急避難場所）</h2>
 <div class="grid">
 {% for it in tl.refuge['items'] %}<div class="card"><div class="k">徒歩約{{ it.walk_minutes }}分{% if it.distance_m %}・{{ it.distance_m }}m{% endif %}</div><div class="v" style="font-size:16px">{{ it.name }}</div><div style="font-size:13px;color:#555">{{ it.address }}{% if it.hazards %}<br>対応: {{ it.hazards|join('・') }}{% endif %}</div></div>{% endfor %}
