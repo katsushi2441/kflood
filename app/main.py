@@ -77,6 +77,8 @@ LINKS = {
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 templates = Jinja2Templates(directory=os.path.join(ROOT, 'app', 'templates'))
 app = FastAPI(title=SITE)
+from app import distmode  # noqa: E402  配布先で KURAGE_PUBLIC_ORIGIN を設定したときだけ働く
+distmode.install(app)
 _rate = {}
 
 
