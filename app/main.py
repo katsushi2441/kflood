@@ -517,7 +517,7 @@ def ensure_ready():
 
 
 @app.get('/api/check')
-def api_check(request: Request, q: str = '', lat: float = None, lon: float = None):
+def api_check(request: Request, q: str = '', lat: float = None, lon: float = None, addr: str = ''):
     if limited(client_ip(request)):
         raise HTTPException(429, '短時間に多くの判定が行われました。1分ほど待ってから再度お試しください')
     ensure_ready()
@@ -525,7 +525,8 @@ def api_check(request: Request, q: str = '', lat: float = None, lon: float = Non
         # 地図をクリックした地点（住所検索なし）
         if not (20 < lat < 46 and 122 < lon < 154):
             raise HTTPException(400, '緯度経度が日本の範囲外です')
-        res = check_point(lon, lat, title=f'地図で指定した地点（{lat:.5f}, {lon:.5f}）')
+        # addr: 呼び出し側が逆ジオコーディング済みの住所（kbousai の GPS）。警報・避難情報は住所の文字列で引くので渡す
+        res = check_point(lon, lat, title=addr.strip()[:120] or f'地図で指定した地点（{lat:.5f}, {lon:.5f}）')
         res['query'] = ''
         res['elevation'] = elevation(lon, lat)
         return JSONResponse(res, headers={'Cache-Control': 'no-store'})
