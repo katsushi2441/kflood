@@ -54,6 +54,7 @@ footer{border-top:1px solid var(--line);background:#fff;padding:20px 0;color:var
 <a class="brand" href="{{ root }}">{{ site }}<small>{% block badge %}名古屋市版デモ ＋ 東京都・千葉県・神奈川県・静岡県{% endblock %}</small></a>
 <nav class="menu"><a href="{{ root }}" class="{{ 'on' if nav=='home' }}">住所で判定</a><a href="{{ root }}now" class="{{ 'on' if nav=='now' }}">いま、どうするか</a><a href="{{ root }}juyo" class="{{ 'on' if nav=='juyo' }}">重説の災害項目</a><a href="{{ root }}nagoya/" class="{{ 'on' if nav=='nagoya' }}">名古屋市（区・河川）</a><a href="{{ root }}map/" class="{{ 'on' if nav=='map' }}">地図</a><a href="{{ root }}history" class="{{ 'on' if nav=='history' }}">出た記録</a><a href="{{ root }}timeline" class="{{ 'on' if nav=='timeline' }}">マイ・タイムライン</a><a href="{{ root }}batch" class="{{ 'on' if nav=='batch' }}">CSV一括</a><a href="{{ root }}about" class="{{ 'on' if nav=='about' }}">データについて</a><!--kurage-only--><a href="{{ links.buy }}" class="buy" target="_blank" rel="noopener">オンプレミス版</a><!--/kurage-only--></nav>
 </div></header>
+<div style="padding:0 16px"><!--kurage-only--><div style="max-width:1000px;margin:12px auto 14px;background:#eef6fb;border:1px solid #bcd9ec;border-radius:10px;padding:10px 14px;font-size:14px;line-height:1.7;color:#16232e;box-sizing:border-box"><b>台風・大雨のときは、いま逃げた方がいい？</b> 住所か現在地で、警報・キキクル・台風の進路・川・津波・避難情報をまとめて答えます。 <a href="https://kurage.exbridge.jp/kbousai.php/?ref=kflood-top" style="font-weight:700;color:#0b5d8f">Kurage 防災AIチャットで聞く →</a></div><!--/kurage-only--></div>
 <main><div class="wrap">
 {% block body %}{% endblock %}
 </div></main>
