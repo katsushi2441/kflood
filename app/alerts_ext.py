@@ -394,14 +394,21 @@ def _fetch_kanagawa(addr):
                 break
         if pid and opened < MAX_DETAIL:
             opened += 1
+            ok = True
             try:
                 it, nt = parse_chiba_detail(_get(KANAGAWA_DETAIL.format(pid=pid)), row['city'])
             except Exception:
-                it, nt = [], []
+                it, nt, ok = [], [], False
             for x in it:
                 x['city'] = row['city']
             if it:
                 items += it
+                notes += nt
+                continue
+            if ok and nt:
+                # 詳細が読めて、書かれている地区が全部「解除」のとき。県のトップの「避難発令」タブには
+                # 解除だけの報も残るので、そこを「市区町村ぜんぶに発令中」と読まない
+                # （2026-09-28 横浜市中区・港北区・戸塚区：9/22 の解除報を6日間「避難指示」と出していた）
                 notes += nt
                 continue
         # 地区まで分からないときは、市区町村ぜんぶを対象として返す。**黙って落とさない。**
