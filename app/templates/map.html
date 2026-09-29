@@ -46,7 +46,7 @@
     </div>
   </div>
   <div class="lay res" id="res"><h3>この地点の判定</h3><div class="src" id="resbody">地図をクリックするか、住所を入れてください。</div></div>
-  <p class="src" style="margin:0">出典: ハザードマップポータルサイト（国土交通省）の配信データ、名古屋市 内水氾濫ハザードマップ・学区線（CC BY 4.0）、国土数値情報（国土交通省）、地理院タイル。判定は代表点の参考情報で、公的な証明ではありません。</p>
+  <p class="src" style="margin:0">出典: ハザードマップポータルサイト（国土交通省）の配信データ、名古屋市 洪水・内水氾濫ハザードマップ・学区線（CC BY 4.0）、国土数値情報（国土交通省）、地理院タイル。判定は代表点の参考情報で、公的な証明ではありません。</p>
 </div>
 <div id="map"></div>
 </div>
@@ -88,8 +88,8 @@ function renderRes(j){
   var h='<div class="row"><div class="k">地点</div><div class="v" style="font-size:14px">'+esc(j.address)+'</div><div class="src">'+(j.elevation?'海抜 '+esc(j.elevation.m)+'m ／ ':'')+j.lat.toFixed(5)+', '+j.lon.toFixed(5)+'</div></div>';
   if(n.status==='uncovered'){h+='<div class="row"><div class="k">洪水（国土数値情報）</div><div class="v">未収録</div></div>'}
   else{
-    h+='<div class="row"><div class="k">洪水 想定最大規模の浸水深（国土数値情報 {{ a31_vintage_short }}）</div><div class="v">'+(n.max?esc(n.max.label):'区域外')+'</div>'+(n.nearest_m?'<div class="src">最寄りの区域まで約'+n.nearest_m+'m</div>':'')+'</div>';
-    h+='<div class="row"><div class="k">浸水継続時間</div><div class="v">'+(n.duration?esc(n.duration.label):'想定なし')+'</div></div>';
+    h+='<div class="row"><div class="k">洪水 想定最大規模の浸水深（国土数値情報 {{ a31_vintage_short }}'+(n.city?'＋名古屋市 令和8年度版':'')+'）</div><div class="v">'+(n.max?esc(n.max.label)+(n.max.depth_m!=null?'（約'+n.max.depth_m+'m）':''):'区域外')+'</div>'+(n.nearest_m?'<div class="src">最寄りの区域まで約'+n.nearest_m+'m</div>':'')+'</div>';
+    h+='<div class="row"><div class="k">浸水継続時間</div><div class="v">'+(n.duration?esc(n.duration.label):(n.city&&n.city.duration_missing?'データなし':'想定なし'))+'</div></div>';
     h+='<div class="row"><div class="k">家屋倒壊等氾濫想定区域</div><div class="v">'+((n.collapse&&n.collapse.length)?esc(n.collapse.map(function(c){return c.label}).join('・')):'区域外')+'</div></div>';
   }
   h+='<div class="row"><div class="k">内水（名古屋市）</div><div class="v">'+(w.status==='inside'&&w.depth_label?esc(w.depth_label):w.status==='outside'?'想定区域外':'対象外（名古屋市外）')+'</div>'+(w.minutes_label?'<div class="src">継続 '+esc(w.minutes_label)+'</div>':'')+'</div>';

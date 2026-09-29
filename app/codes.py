@@ -63,6 +63,27 @@ def naisui_band(depth_m, scheme='fine'):
     return bands[-1][2]
 
 
+def depth_rank(depth_m):
+    """浸水深(m)→ DEPTH_RANK のランク。自治体データ（メートル値）を国のランクに揃えるため。"""
+    if depth_m is None:
+        return None
+    for rank, hi in ((1, 0.5), (2, 3.0), (3, 5.0), (4, 10.0), (5, 20.0)):
+        if depth_m < hi:
+            return rank
+    return 6
+
+
+def duration_rank(minutes):
+    """浸水継続時間(分)→ DURATION_RANK のランク（12・24・72・168・336・672時間で区切る）。"""
+    if minutes is None:
+        return None
+    h = float(minutes) / 60
+    for rank, hi in ((1, 12), (2, 24), (3, 72), (4, 168), (5, 336), (6, 672)):
+        if h < hi:
+            return rank
+    return 7
+
+
 def minutes_label(m):
     if m is None:
         return None

@@ -59,12 +59,13 @@ function render(j){
   h+='<h2 style="margin-top:12px">洪水（河川の氾濫）</h2><div class="grid">';
   if(n.status==='uncovered'){h+='<div class="card"><div class="k">洪水データ</div><div class="v">未収録</div><div class="s">このメッシュは取り込まれていません（区域外ではありません）</div></div>';}
   else{
-    h+='<div class="card '+(n.max?lv(n.max.rank):'none')+'"><div class="k">想定最大規模の浸水深</div><div class="v">'+(n.max?esc(n.max.label):'区域外')+'</div><div class="s">'+(n.max?esc(n.max.rivers.join('・')):(n.nearest_m!=null?'最寄りの区域まで約'+n.nearest_m+'m':'1km以内に区域なし'))+'</div></div>';
+    h+='<div class="card '+(n.max?lv(n.max.rank):'none')+'"><div class="k">想定最大規模の浸水深</div><div class="v">'+(n.max?esc(n.max.label):'区域外')+'</div><div class="s">'+(n.max?(n.max.depth_m!=null?'約'+n.max.depth_m+'m・':'')+esc(n.max.rivers.join('・')):(n.nearest_m!=null?'最寄りの区域まで約'+n.nearest_m+'m':'1km以内に区域なし'))+'</div></div>';
     h+='<div class="card '+(n.planned?lv(n.planned.rank):'none')+'"><div class="k">計画規模の浸水深</div><div class="v">'+(n.planned?esc(n.planned.label):'区域外')+'</div><div class="s">河川整備の目標とする規模の降雨</div></div>';
-    h+='<div class="card '+(n.duration?(n.duration.rank>=3?'lv3':'lv2'):'none')+'"><div class="k">浸水継続時間</div><div class="v">'+(n.duration?esc(n.duration.label):'想定なし')+'</div><div class="s">水が引くまでの目安</div></div>';
+    h+='<div class="card '+(n.duration?(n.duration.rank>=3?'lv3':'lv2'):'none')+'"><div class="k">浸水継続時間</div><div class="v">'+(n.duration?esc(n.duration.label):(n.city&&n.city.duration_missing?'データなし':'想定なし'))+'</div><div class="s">'+(n.duration&&n.duration.minutes_label?esc(n.duration.minutes_label)+'（名古屋市のデータ）':(n.city&&n.city.duration_missing?'この地点の継続時間は公表データにありません（水がすぐ引くという意味ではありません）':'水が引くまでの目安'))+'</div></div>';
     h+='<div class="card '+(n.collapse.length?'lv3':'none')+'"><div class="k">家屋倒壊等氾濫想定区域</div><div class="v">'+(n.collapse.length?esc(n.collapse.map(c=>c.label).join('・')):'該当なし')+'</div><div class="s">'+(n.collapse.length?'建物が壊れるおそれ。立退き避難が必要':'')+'</div></div>';
   }
   h+='</div>';
+  if(n.city){h+='<p class="src" style="margin:6px 0 0">名古屋市内は、国のデータ（国土数値情報）に加えて名古屋市の洪水ハザードマップ（令和8年度版・国と県の区域図を重ね合わせたもの）でも判定し、深い方・長い方を表示しています。'+(n.city.national_status==='outside'?'<b>この地点は国のデータだけでは区域外でした。</b>':'')+'</p>';}
   // いまの避難情報。名古屋市は学区、東京都・千葉県は町丁目や地区の単位で出る（a.scope）。
   var a=j.alert||{};
   if(a.place){

@@ -50,11 +50,18 @@ def main():
                        SELECT
                          (SELECT count(*) FROM pts) AS n,
                          (SELECT json_object_agg(r, c) FROM (
-                            SELECT coalesce((SELECT max(rank) FROM flood f WHERE f.category=20 AND ST_Contains(f.geom, pts.p)), 0) AS r, count(*) AS c
+                            -- 国のランクと、自治体版（名古屋市の洪水ハザードマップ）の浸水深をランクにしたものの深い方。
+                            -- 判定画面（app/main.py merge_muni_flood）と同じ考え方にそろえる
+                            SELECT greatest(
+                                     coalesce((SELECT max(rank) FROM flood f WHERE f.category=20 AND ST_Contains(f.geom, pts.p)), 0),
+                                     coalesce((SELECT CASE WHEN max(depth_m) < 0.5 THEN 1 WHEN max(depth_m) < 3 THEN 2 WHEN max(depth_m) < 5 THEN 3
+                                                           WHEN max(depth_m) < 10 THEN 4 WHEN max(depth_m) < 20 THEN 5 WHEN max(depth_m) >= 20 THEN 6 END
+                                               FROM muni_flood_depth m WHERE m.area=%s AND ST_Contains(m.geom, pts.p)), 0)) AS r, count(*) AS c
                             FROM pts GROUP BY 1) x) AS by_rank,
-                         (SELECT count(*) FROM pts WHERE EXISTS (SELECT 1 FROM flood f WHERE f.category=40 AND ST_Contains(f.geom, pts.p))) AS collapse,
+                         (SELECT count(*) FROM pts WHERE EXISTS (SELECT 1 FROM flood f WHERE f.category=40 AND ST_Contains(f.geom, pts.p))
+                                                      OR EXISTS (SELECT 1 FROM muni_flood_collapse m WHERE m.area=%s AND ST_Contains(m.geom, pts.p))) AS collapse,
                          (SELECT count(*) FROM pts WHERE EXISTS (SELECT 1 FROM naisui_depth d WHERE d.area=%s AND ST_Contains(d.geom, pts.p))) AS naisui
-                    """, (area, ward, a.n, area))
+                    """, (area, ward, a.n, area, area, area))
         n, by_rank, collapse, naisui = cur.fetchone()
         by_rank = {str(k): round(100.0 * v / n, 1) for k, v in (by_rank or {}).items()}
         d05 = round(sum(v for k, v in by_rank.items() if int(k) >= 2), 1)

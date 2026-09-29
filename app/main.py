@@ -16,7 +16,7 @@
   判定            : PostGIS（kflood-db）ST_Contains
   データ          : 国土数値情報 洪水浸水想定区域（1次メッシュ単位）全国。旧識別子 A31 第4.0版(2022年度)は後継 A31b(毎年5月更新)へ
                     移行する。どの版を使っているかは .env の KFLOOD_A31_PREFIX（datasets.key の接頭辞）で決める
-                    ＋ 名古屋市 内水氾濫ハザードマップ（CC BY）＋ 国土数値情報A51 内水（10市区町村）＋ 重ねるハザードマップ 内水（国土地理院・PDL1.0）
+                    ＋ 名古屋市 洪水ハザードマップ R8（CC BY・国と深い方を採る）＋ 名古屋市 内水氾濫ハザードマップ（CC BY）＋ 国土数値情報A51 内水（10市区町村）＋ 重ねるハザードマップ 内水（国土地理院・PDL1.0）
 """
 import asyncio
 import csv
@@ -39,7 +39,7 @@ from app import jma
 from app import siblings
 from app import nagoya
 from app.codes import (CATEGORY, COLLAPSE, DEPTH_ACTION, DEPTH_RANK, DURATION_RANK, LONG_DURATION_RANK, RIVER,
-                       minutes_label, naisui_band)
+                       depth_rank, duration_rank, minutes_label, naisui_band)
 
 PORT = int(os.environ.get('KFLOOD_PORT', '18386'))
 DB = dict(host='127.0.0.1', port=int(os.environ.get('KFLOOD_DB_PORT', '55434')), dbname='kflood', user='postgres',
@@ -219,6 +219,64 @@ def tsunami_keikai_at(cur, lon, lat, address):
     return out
 
 
+MUNI_COLLAPSE_LABEL = '区域内（名古屋市のデータは氾濫流・河岸侵食を区別していません）'
+
+
+def merge_muni_flood(cur, lon, lat, nat, out):
+    """自治体版の洪水ハザードマップで、国の判定を補う（いまは名古屋市だけ）。
+
+    国土数値情報は県が新しく指定した中小河川が遅れて入る（名古屋では植田川・香流川など）。
+    名古屋市の図は国・県の区域図を重ねて深い方・長い方を採ったものなので、**国と市の深い方・長い方**を出す。
+    市域の外（学区ポリゴンの和の外）では何もしない。データが無い環境でも国の判定だけで続ける。
+    """
+    pt = 'ST_SetSRID(ST_Point(%s,%s),6668)'
+    try:
+        cur.execute(f'SELECT area, dataset_keys FROM muni_flood_coverage WHERE ST_Contains(geom, {pt}) LIMIT 1', (lon, lat))
+        cov = cur.fetchone()
+        if not cov or not cov[1]:
+            return
+        area, keys = cov
+        cur.execute(f'SELECT max(depth_m) FROM muni_flood_depth WHERE area=%s AND ST_Contains(geom, {pt})', (area, lon, lat))
+        d = cur.fetchone()[0]
+        cur.execute(f'SELECT max(minutes) FROM muni_flood_duration WHERE area=%s AND ST_Contains(geom, {pt})', (area, lon, lat))
+        m = cur.fetchone()[0]
+        cur.execute(f'SELECT EXISTS(SELECT 1 FROM muni_flood_collapse WHERE area=%s AND ST_Contains(geom, {pt}))', (area, lon, lat))
+        col = bool(cur.fetchone()[0])
+    except Exception:
+        cur.connection.rollback()
+        return
+    city = dict(area=area, depth_m=(round(float(d), 2) if d is not None else None), minutes=(round(float(m)) if m is not None else None),
+                minutes_label=minutes_label(m), collapse=col, used=[])
+    national_status = nat['status']
+    if d is not None:
+        r = depth_rank(float(d))
+        if not nat['max'] or r > nat['max']['rank']:
+            nat['max'] = dict(rank=r, label=DEPTH_RANK[r], rivers=[f'{area}の洪水ハザードマップ（国・県の指定河川を重ね合わせ）'],
+                              source='muni', depth_m=city['depth_m'])
+            city['used'].append('depth')
+        nat['status'] = 'inside'
+    if m is not None:
+        r = duration_rank(float(m))
+        if not nat['duration'] or r > nat['duration']['rank']:
+            nat['duration'] = dict(rank=r, label=DURATION_RANK[r], source='muni', minutes_label=minutes_label(m))
+            city['used'].append('duration')
+    if d is not None and m is None and not nat['duration']:
+        # 浸水深はあるのに継続時間のセルが無い（市の継続時間は25mセルで、浸水深の5mセルより粗い）。
+        # 「想定なし」と書くと水がすぐ引くように読めるので、データが無いと書き分ける
+        city['duration_missing'] = True
+    if col and not nat['collapse']:
+        nat['collapse'] = [dict(code=0, label=MUNI_COLLAPSE_LABEL, source='muni')]
+        nat['status'] = 'inside'
+        city['used'].append('collapse')
+    if national_status != 'inside' and nat['status'] == 'inside':
+        city['national_status'] = national_status   # 国のデータだけなら「区域外」だった地点
+        nat['nearest_m'] = None
+    nat['city'] = city
+    cur.execute('SELECT key,name,data_vintage,attribution,note FROM datasets WHERE key = ANY(%s) ORDER BY key', (list(keys),))
+    for k, n, v, a, note in cur.fetchall():
+        out['datasets'].append(dict(key=k, name=n, vintage=v, attribution=a, note=note))
+
+
 def check_point(lon, lat, title=''):
     """1地点の判定。返り値は JSON にそのまま出せる dict。"""
     out = dict(lon=lon, lat=lat, address=title, national=None, naisui=None, takashio=None,
@@ -270,6 +328,7 @@ def check_point(lon, lat, title=''):
                 cur.execute('SELECT key,name,data_vintage,attribution,note FROM datasets WHERE key = ANY(%s) ORDER BY key', (sorted(keys),))
                 for k, n, v, a, note in cur.fetchall():
                     out['datasets'].append(dict(key=k, name=n, vintage=v, attribution=a, note=note))
+        merge_muni_flood(cur, lon, lat, nat, out)
         out['national'] = nat
 
         # 2) 内水（自治体版）。収録自治体名が住所に含まれるときだけ判定する。
@@ -476,7 +535,11 @@ def check_point(lon, lat, title=''):
         if nat['status'] == 'outside':
             if nat['nearest_m'] is not None and nat['nearest_m'] <= NEAR_M:
                 notes.append(f'最も近い洪水浸水想定区域まで約{nat["nearest_m"]}mです。住所から求めた座標は町丁目のおおよその位置のため、実際の敷地が区域内である可能性があります。地番で確認してください。')
-            g.append('国の洪水浸水想定区域（想定最大規模）には含まれていません。ただし対象は水防法で指定された河川の氾濫で、指定外の小さな河川や内水の浸水はこのデータでは分かりません。')
+            who = f'国と{nat["city"]["area"]}' if nat.get('city') else '国'
+            g.append(f'{who}の洪水浸水想定区域（想定最大規模）には含まれていません。ただし対象は水防法で指定された河川の氾濫で、指定外の小さな河川や内水の浸水はこのデータでは分かりません。')
+        if nat.get('city', {}).get('national_status') == 'outside':
+            notes.append(f'国のデータ（国土数値情報）だけではこの地点は洪水浸水想定区域の外ですが、{nat["city"]["area"]}の洪水ハザードマップ（令和8年度版）では区域内です。'
+                         '市の図は令和7年3月までに国と愛知県が指定した区域を重ねたもので、国のデータにはまだ入っていない区域があります。深い方・長い方を表示しています。')
         for d in out['datasets']:
             y = vintage_year(d['vintage'])
             if d['key'].startswith('A31') and y and date.today().year - y > STALE_YEARS:
@@ -785,8 +848,9 @@ def about(request: Request):
         cur.execute('SELECT count(*) FROM meshes')
         meshes = cur.fetchone()[0]
     a31 = [r for r in rows if r[0].startswith(A31_PREFIX + '_')]
-    muni = [r for r in rows if not r[0].startswith('A31')]
-    return page(request, 'about.html', a31=a31, muni=muni, meshes=meshes)
+    city_flood = [r for r in rows if r[0].startswith('nagoya_flood_')]
+    muni = [r for r in rows if not r[0].startswith('A31') and r not in city_flood]
+    return page(request, 'about.html', a31=a31, muni=muni, meshes=meshes, city_flood=city_flood)
 
 
 @app.get('/batch', response_class=HTMLResponse)
