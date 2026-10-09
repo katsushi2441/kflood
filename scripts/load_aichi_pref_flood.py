@@ -11,6 +11,11 @@
   【優先】20250328_R7.3指定図面SHP   12流域。**同じ流域が 2024 版にもあれば、こちらを使う**（県の指示）
   20241112指定_浸水想定区域図SHPデータ  約30流域。想定最大規模・計画規模・浸水継続時間・氾濫流・河岸侵食
 
+**展開したシェープファイル（約17GB）は取り込み後に消した。** 入れ直すときは extracted/洪水/ の2つの zip を
+x_<zip名>/ に展開し直す（ファイル名は CP932）。2026-10-09 の取り込み結果: 浸水深 41,447,797 面・家屋倒壊 1,122 面。
+八田川・内津川の想定最大規模は、県から届いた DBF の最後の32,768件分が切れていたので、読める件数だけ入れた
+（--only で後から足した。県に送り直しを依頼する）。
+
 流域ごとに作った業者が違い、浸水深の列名（浸水深/DEEP/deep/depth/水深…）も単位も揃っていない。
 **列名を信じず、値の範囲を見てから使う**（名古屋市の図は浸水深の列名が max_dur だった）。
 
@@ -130,7 +135,17 @@ DATASETS = {
 AICHI_BBOX = (136.55, 34.50, 137.90, 35.45)
 
 
-def ogr_load(shp, sql=None):
+def dbf_rows(shp):
+    """DBF のヘッダーの件数と、ファイルの大きさから実際に読める件数。県から届いた八田川・内津川の
+    想定最大規模は、最後の32,768件分の属性が切れていた（zip は正常。2026-10-09）"""
+    import struct
+    f = os.path.splitext(shp)[0] + '.dbf'
+    with open(f, 'rb') as fh:
+        n, hl, rl = struct.unpack('<IHH', fh.read(32)[4:12])
+    return n, max(0, (os.path.getsize(f) - hl) // rl)
+
+
+def ogr_load(shp, sql=None, limit=None):
     """1ファイルを aichi_stage に入れる（経緯度 JGD2011 に変換）。.prj が無ければ平面直角座標系 第VII系とみなす"""
     psql('DROP TABLE IF EXISTS aichi_stage', fetch=False)
     cmd = ['ogr2ogr', '-f', 'PostgreSQL', 'PG:' + pg_dsn(), shp, '-nln', 'aichi_stage',
@@ -140,9 +155,13 @@ def ogr_load(shp, sql=None):
         cmd += ['-s_srs', 'EPSG:2449']
     if sql:
         cmd += ['-sql', sql, '-dialect', 'OGRSQL']
+    if limit:
+        cmd += ['-limit', str(limit)]
     r = subprocess.run(cmd, capture_output=True, text=True, env=ENV)
     if r.returncode != 0:
         raise RuntimeError(r.stderr[-600:])
+    if not psql("SELECT to_regclass('aichi_stage')")[0][0]:
+        return None   # 地物が0件のファイルは ogr2ogr がテーブルを作らない
     bb = psql('SELECT ST_XMin(e), ST_YMin(e), ST_XMax(e), ST_YMax(e) FROM (SELECT ST_Extent(geom) e FROM aichi_stage) x')[0]
     if bb[0] is None:
         return None
@@ -159,7 +178,8 @@ def load(force=False, only=None):
         return
     rows, prio = files()
     for k, ds in DATASETS.items():
-        psql(f'DELETE FROM {ds["table"]} WHERE dataset_key=%s', (k,), fetch=False)
+        if not only:   # --only は足すだけ（全流域を入れ終えたあとに一部を入れ直すとき、ほかを消さない）
+            psql(f'DELETE FROM {ds["table"]} WHERE dataset_key=%s', (k,), fetch=False)
         psql("""INSERT INTO datasets(key,name,source_url,data_vintage,loaded_at,attribution,note)
                 VALUES(%s,%s,%s,%s,now(),%s,%s)
                 ON CONFLICT (key) DO UPDATE SET name=EXCLUDED.name, data_vintage=EXCLUDED.data_vintage,
@@ -174,22 +194,37 @@ def load(force=False, only=None):
             continue
         if rl not in ('l2', 'collapse_flow', 'collapse_bank'):
             continue
+        if only and rl != 'l2':
+            continue   # --only は浸水深の入れ直し用。家屋倒壊は全体の取り込みで入っているので二重にしない
         layer = os.path.splitext(os.path.basename(p))[0]
         n, fields, geom = ogr_fields(p)
         if 'Polygon' not in geom:
             report.append((b, rl, '面ではない', geom)); continue
         if rl == 'l2':
-            f = next((c for c in DEPTH_FIELDS if c in fields and stats(p, c)), None)
-            if not f:
-                report.append((b, rl, '浸水深の列が無い', ','.join(fields))); continue
-            st = stats(p, f)
-            if st[1] > 30:
-                report.append((b, rl, f'浸水深の最大が{st[1]}（m ではない？）', f)); continue
-            bb = ogr_load(p, f'SELECT CAST("{f}" AS float) AS depth_m FROM "{layer}"')
+            total, ok_rows = dbf_rows(p)
+            cut = ok_rows < total
+            if cut:
+                # 属性が途中で切れている。読める件数までだけ入れ、値の範囲は入れたあとで確かめる
+                f = next((c for c in DEPTH_FIELDS if c in fields), None)
+                if not f:
+                    report.append((b, rl, '浸水深の列が無い', ','.join(fields))); continue
+            else:
+                f = next((c for c in DEPTH_FIELDS if c in fields and stats(p, c)), None)
+                if not f:
+                    report.append((b, rl, '浸水深の列が無い', ','.join(fields))); continue
+                st = stats(p, f)
+                if st[1] > 30:
+                    report.append((b, rl, f'浸水深の最大が{st[1]}（m ではない？）', f)); continue
+            bb = ogr_load(p, f'SELECT CAST("{f}" AS float) AS depth_m FROM "{layer}"', limit=ok_rows if cut else None)
+            if cut and bb and bb[0] != '外れ':
+                hi = psql('SELECT max(depth_m) FROM aichi_stage')[0][0]
+                if hi is None or hi > 30:
+                    report.append((b, rl, f'浸水深の最大が{hi}（m ではない？）', f)); continue
+                print(f'  {b}: 属性が {total - ok_rows:,} 件欠けている（{ok_rows:,}/{total:,} 件だけ入れる）', flush=True)
         else:
             bb = ogr_load(p)
         if bb is None or bb[0] == '外れ':
-            report.append((b, rl, '範囲が愛知県の外（座標系？）', str(bb))); continue
+            report.append((b, rl, '空のファイル' if bb is None else '範囲が愛知県の外（座標系？）', str(bb))); continue
         if rl == 'l2':
             m = psql("""WITH ins AS (INSERT INTO muni_flood_depth(dataset_key, area, depth_m, geom)
                         SELECT 'aichi_pref_flood_depth', %s, depth_m, geom FROM aichi_stage
@@ -213,7 +248,15 @@ def load(force=False, only=None):
         if not str(r[2]).endswith('面'):
             print('  取り込まなかった:', *r, flush=True)
     if only:
-        print('--only のときは収録範囲を登録しない（判定に使われない）')
+        if psql("SELECT 1 FROM muni_flood_coverage WHERE area=%s", (AREA,)):
+            # 全流域を入れ終えたあとの追加: その流域の範囲を収録範囲に足す
+            psql("""UPDATE muni_flood_coverage SET loaded_at=now(), geom=ST_Multi(ST_CollectionExtract(ST_MakeValid(ST_Union(geom,
+                      ST_Difference((SELECT ST_Union(geom) FROM aichi_hull),
+                        COALESCE((SELECT geom FROM muni_flood_coverage WHERE area='名古屋市'), ST_GeomFromText('POLYGON EMPTY', 6668))))), 3))
+                    WHERE area=%s AND EXISTS (SELECT 1 FROM aichi_hull)""", (AREA,), fetch=False)
+            print('収録範囲に足した')
+        else:
+            print('--only のときは収録範囲を登録しない（判定に使われない）')
         return
     # 収録範囲 = 流域ごとの浸水域の凸包の和 − 名古屋市域（名古屋市は市の図を使う。範囲が重なると判定が曖昧になる）
     psql("""INSERT INTO muni_flood_coverage(area, dataset_keys, loaded_at, geom)
