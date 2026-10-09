@@ -220,6 +220,17 @@ def tsunami_keikai_at(cur, lon, lat, address):
 
 
 MUNI_COLLAPSE_LABEL = '区域内（名古屋市のデータは氾濫流・河岸侵食を区別していません）'
+# 自治体版・県版の洪水データの書き方。名古屋市は市の図、それ以外の愛知県は県の区域図（2026-10-09 県河川課から提供）
+MUNI_SRC = {
+    '名古屋市': dict(rivers='名古屋市の洪水ハザードマップ（国・県の指定河川を重ね合わせ）',
+                 label='名古屋市 令和8年度版',
+                 explain='名古屋市内は、国のデータ（国土数値情報）に加えて名古屋市の洪水ハザードマップ（令和8年度版・国と県の区域図を重ね合わせたもの）でも判定し、深い方・長い方を表示しています。',
+                 note='{area}の洪水ハザードマップ（令和8年度版）では区域内です。市の図は令和7年3月までに国と愛知県が指定した区域を重ねたもので、国のデータにはまだ入っていない区域があります。深い方・長い方を表示しています。'),
+    '愛知県': dict(rivers='愛知県の洪水浸水想定区域図（県管理河川）',
+                label='愛知県 2024年11月・2025年3月指定',
+                explain='愛知県内（名古屋市を除く）は、国のデータ（国土数値情報）に加えて愛知県の洪水浸水想定区域図（県管理河川・2024年11月と2025年3月の指定。県河川課から提供）でも判定し、深い方を表示しています。浸水継続時間は国のデータです。',
+                note='愛知県の洪水浸水想定区域図（2024年11月・2025年3月の指定）では区域内です。県が新しく指定した河川の区域は、国のデータにまだ入っていないことがあります。深い方を表示しています。'),
+}
 
 
 def merge_muni_flood(cur, lon, lat, nat, out):
@@ -240,18 +251,20 @@ def merge_muni_flood(cur, lon, lat, nat, out):
         d = cur.fetchone()[0]
         cur.execute(f'SELECT max(minutes) FROM muni_flood_duration WHERE area=%s AND ST_Contains(geom, {pt})', (area, lon, lat))
         m = cur.fetchone()[0]
-        cur.execute(f'SELECT EXISTS(SELECT 1 FROM muni_flood_collapse WHERE area=%s AND ST_Contains(geom, {pt}))', (area, lon, lat))
-        col = bool(cur.fetchone()[0])
+        cur.execute(f'SELECT DISTINCT kind FROM muni_flood_collapse WHERE area=%s AND ST_Contains(geom, {pt})', (area, lon, lat))
+        kinds = [r[0] for r in cur.fetchall()]
+        col = bool(kinds)
     except Exception:
         cur.connection.rollback()
         return
+    src = MUNI_SRC.get(area, MUNI_SRC['名古屋市'])
     city = dict(area=area, depth_m=(round(float(d), 2) if d is not None else None), minutes=(round(float(m)) if m is not None else None),
-                minutes_label=minutes_label(m), collapse=col, used=[])
+                minutes_label=minutes_label(m), collapse=col, used=[], label=src['label'], explain=src['explain'])
     national_status = nat['status']
     if d is not None:
         r = depth_rank(float(d))
         if not nat['max'] or r > nat['max']['rank']:
-            nat['max'] = dict(rank=r, label=DEPTH_RANK[r], rivers=[f'{area}の洪水ハザードマップ（国・県の指定河川を重ね合わせ）'],
+            nat['max'] = dict(rank=r, label=DEPTH_RANK[r], rivers=[src['rivers']],
                               source='muni', depth_m=city['depth_m'])
             city['used'].append('depth')
         nat['status'] = 'inside'
@@ -264,8 +277,12 @@ def merge_muni_flood(cur, lon, lat, nat, out):
         # 浸水深はあるのに継続時間のセルが無い（市の継続時間は25mセルで、浸水深の5mセルより粗い）。
         # 「想定なし」と書くと水がすぐ引くように読めるので、データが無いと書き分ける
         city['duration_missing'] = True
+        if area != '名古屋市':
+            # 県の区域図の継続時間は流域ごとに単位がばらばらで、まだ取り込んでいない（2026-10-09）
+            city['duration_missing_text'] = '県のデータの浸水継続時間はまだ反映していません（水がすぐ引くという意味ではありません）'
     if col and not nat['collapse']:
-        nat['collapse'] = [dict(code=0, label=MUNI_COLLAPSE_LABEL, source='muni')]
+        lab = MUNI_COLLAPSE_LABEL if not any(kinds) else '区域内（愛知県のデータ・' + '・'.join(k for k in kinds if k) + '）'
+        nat['collapse'] = [dict(code=0, label=lab, source='muni')]
         nat['status'] = 'inside'
         city['used'].append('collapse')
     if national_status != 'inside' and nat['status'] == 'inside':
@@ -538,8 +555,8 @@ def check_point(lon, lat, title=''):
             who = f'国と{nat["city"]["area"]}' if nat.get('city') else '国'
             g.append(f'{who}の洪水浸水想定区域（想定最大規模）には含まれていません。ただし対象は水防法で指定された河川の氾濫で、指定外の小さな河川や内水の浸水はこのデータでは分かりません。')
         if nat.get('city', {}).get('national_status') == 'outside':
-            notes.append(f'国のデータ（国土数値情報）だけではこの地点は洪水浸水想定区域の外ですが、{nat["city"]["area"]}の洪水ハザードマップ（令和8年度版）では区域内です。'
-                         '市の図は令和7年3月までに国と愛知県が指定した区域を重ねたもので、国のデータにはまだ入っていない区域があります。深い方・長い方を表示しています。')
+            src = MUNI_SRC.get(nat['city']['area'], MUNI_SRC['名古屋市'])
+            notes.append('国のデータ（国土数値情報）だけではこの地点は洪水浸水想定区域の外ですが、' + src['note'].format(area=nat['city']['area']))
         for d in out['datasets']:
             y = vintage_year(d['vintage'])
             if d['key'].startswith('A31') and y and date.today().year - y > STALE_YEARS:
