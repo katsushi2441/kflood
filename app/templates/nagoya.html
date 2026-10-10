@@ -14,7 +14,7 @@
 <div class="tscroll"><table class="t">
 <tr><th>警戒レベル</th><th>河川・種別</th><th>発令</th><th>対象の区</th></tr>
 {% for it in sm['items']|sort(attribute='level', reverse=True) %}
-<tr><td><span class="badge {{ 'red' if it.level>=4 else 'amber' }}">レベル{{ it.level }}・{{ it.label }}</span></td><td><a href="river/{{ slugs[it.target] }}/">{{ it.target }}</a></td><td>{{ (it.issued_at or '')[5:16]|replace('T',' ') }}</td><td>{{ it.wards.keys()|join('・') }}</td></tr>
+<tr><td><span class="badge {{ 'red' if it.level>=4 else 'amber' }}">レベル{{ it.level }}・{{ it.label }}</span></td><td><a href="../river/{{ slugs[it.target] }}/">{{ it.target }}</a></td><td>{{ (it.issued_at or '')[5:16]|replace('T',' ') }}</td><td>{{ it.wards.keys()|join('・') }}</td></tr>
 {% endfor %}
 </table></div>
 <p class="src">出典: <a href="{{ live.source_url }}" target="_blank" rel="noopener">{{ live.source }}</a>（事実のみ抽出。文言は本サイトのもの）{% if live.status=='stale' %}／前回取得値を表示中{% endif %}</p>
@@ -32,7 +32,7 @@
 <h2 style="margin-top:0">河川から探す（氾濫時に対象となる学区が分かっている河川）</h2>
 <div class="grid">
 {% for r in rivers %}
-<a class="card {{ 'lv3' if r.target in current_targets else 'none' }}" href="river/{{ r.slug }}/" style="text-decoration:none"><div class="k">{{ r.target }}</div><div class="v" style="font-size:18px">{{ '発令中' if r.target in current_targets else '発令なし' }}</div><div class="s">対象: {{ r.wards|join('・') }}{% if r.last_alert %}<br>直近: レベル{{ r.last_alert.level }}（{{ (r.last_alert.issued_at or '')[:10] }}）{% endif %}</div></a>
+<a class="card {{ 'lv3' if r.target in current_targets else 'none' }}" href="../river/{{ r.slug }}/" style="text-decoration:none"><div class="k">{{ r.target }}</div><div class="v" style="font-size:18px">{{ '発令中' if r.target in current_targets else '発令なし' }}</div><div class="s">対象: {{ r.wards|join('・') }}{% if r.last_alert %}<br>直近: レベル{{ r.last_alert.level }}（{{ (r.last_alert.issued_at or '')[:10] }}）{% endif %}</div></a>
 {% endfor %}
 </div>
 <p class="src">対象学区は、市が発令時に公表した「河川流域の地域」の学区をそのまま記録したものです（発令が解除されても残します）。</p>
