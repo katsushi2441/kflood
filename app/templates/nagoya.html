@@ -3,7 +3,7 @@
 {% block title %}名古屋市の洪水・内水ハザードマップ｜いまの避難情報（河川別・区別）と避難先 | {{ site }}{% endblock %}
 {% block desc %}名古屋市の洪水・内水の浸水想定と、いま出ている避難情報（警戒レベル）を河川別・区別にまとめました。天白川・矢田川・新川などの氾濫時に対象となる学区、区ごとの浸水のおそれ、避難先の探し方。住所を入れれば何メートル・何日浸かる想定かも分かります。{% endblock %}
 {% block body %}
-<nav class="src" style="margin-bottom:8px"><a href="./">住所で判定</a> › 名古屋市</nav>
+<nav class="src" style="margin-bottom:8px"><a href="../">住所で判定</a> › <a href="../area/pref/23">愛知県</a> › 名古屋市（<a href="../area/aichi-nagoya">市全体の避難場所と浸水想定</a>）</nav>
 <h1>名古屋市の洪水・内水ハザードマップ｜いまの避難情報と避難先</h1>
 <p class="lead">市の災害情報配信に出ている警戒レベルを河川別・区別に並べ、国の洪水浸水想定と市の内水ハザードマップ、避難先の探し方につなげます。{{ sm['items']|length }}件の発令データは {{ live.fetched_at }} に取得（3分ごとに更新）。</p>
 <div class="panel">

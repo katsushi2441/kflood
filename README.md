@@ -107,6 +107,24 @@ curl 'http://127.0.0.1:18386/api/check?q=愛知県名古屋市中川区富田町
 `/nagoya/`（市ハブ）・`/nagoya/<区slug>/`（16区: 学区一覧・いまの発令・浸水のおそれ・対象河川・避難先）・`/river/<河川slug>/`（いまの発令・対象学区・発令履歴）・`/sitemap.xml`。
 河川→対象学区の対応と発令履歴は `app/nagoya.py` が `data/alerts_history.sqlite` に貯め（初回は 2026-09-08 の実発令を種に）、区ごとの浸水のおそれは `scripts/ward_stats.py` が学区線に800点を打って推定して `ward_stats` 表に入れます（±3ポイント）。
 
+## 全国の市区町村ページ（/area/）
+
+「○○市 ハザードマップ」の検索の受け皿。khazard の `/area/` と同じ形で、`/area/`（全国）・`/area/pref/<2桁>`（都道府県）・
+`/area/<団体コード5桁>`（市区町村。khazard と同じ主要10市はローマ字スラッグ `aichi-nagoya` など）を出します。
+
+中身は `scripts/build_muni_stats.py` が作る `muni_stats` 表です。A31b は市区町村コードを持たないので、ktsunami と同じく
+krefuge の指定緊急避難場所（国土地理院・CC BY 4.0）の座標に、想定最大規模の浸水深・家屋倒壊等氾濫想定区域を引いて
+「避難場所N件中M件が区域内」「深さごとの件数」を数えます（**面積の割合ではない**）。名古屋市・愛知県は判定画面と同じく
+市・県のデータと深い方。1次メッシュが無い場所の避難場所は「未収録」として別に数えます。
+
+```bash
+systemd-run --user --scope -p MemoryMax=8G .venv/bin/python scripts/build_muni_stats.py   # 約115,000件・数十分
+systemctl --user restart kflood.service    # 10分キャッシュなので再起動しなくても反映される
+```
+
+同じ市区町村の他製品（khazard・krefuge・ktsunami・kriskarea・kmorido）へのリンクは、各製品の sitemap.xml に載っている
+市区町村にだけ張ります（`data/sibling_codes.json` に控え）。
+
 ## 他の自治体の内水を足す
 
 `scripts/load_nagoya_naisui.py` の `DATASETS` に、その自治体の配布物（URL・属性名・座標系・出典表記・時点）を1件足して実行します。

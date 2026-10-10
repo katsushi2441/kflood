@@ -845,10 +845,11 @@ def jsonld_for(path: str) -> str:
 
 def page(request: Request, name: str, **kw):
     depth = max(0, request.url.path.strip('/').count('/') + (1 if request.url.path.strip('/') and request.url.path.endswith('/') else 0))
+    kw.setdefault('canonical', PUBLIC_BASE + request.url.path)
+    kw.setdefault('jsonld', jsonld_for(request.url.path))
     kw.update(site=SITE, links=LINKS, year=date.today().year, root='../' * depth if depth else './',
               a31_vintage=a31_vintage(), a31_vintage_short=a31_vintage_short(), a31_page=A31_PAGE,
-              public_base=PUBLIC_BASE, canonical=PUBLIC_BASE + request.url.path,
-              jsonld=jsonld_for(request.url.path))
+              public_base=PUBLIC_BASE)
     return templates.TemplateResponse(request, name, kw)
 
 
@@ -1454,6 +1455,189 @@ def river_page(request: Request, slug: str):
 
 
 
+# ---- 全国の市区町村ページ（/area/<団体コード>）。「○○市 ハザードマップ」の検索の受け皿 ----
+# khazard の /area/ が検索でいちばん伸びている型（28日で412クリック）なので、同じ形で作る。
+# 中身は scripts/build_muni_stats.py が作る muni_stats（指定緊急避難場所の座標に洪水浸水想定を引いた実測）。
+# 面積の割合ではなく「避難場所N件中M件が区域内」という、確かめられる事実だけを書く（ktsunami と同じ）。
+
+# 主要都市は khazard と同じローマ字スラッグにそろえる（khazard の LEGACY_SLUG と同じ10市。
+# khazard の「次に確かめること」がこちらへ同じスラッグでリンクする）。それ以外は5桁の全国地方公共団体コード。
+AREA_SLUG = {
+    "23100": "aichi-nagoya", "14100": "kanagawa-yokohama", "28100": "hyogo-kobe",
+    "34100": "hiroshima-hiroshima", "22205": "shizuoka-atami", "26100": "kyoto-kyoto",
+    "40130": "fukuoka-fukuoka", "42201": "nagasaki-nagasaki", "27100": "osaka-osaka",
+    "23211": "aichi-toyota",
+}
+# 他製品のサイトマップに出てくるローマ字スラッグを団体コードに戻すための表（ktsunami・krefuge の分も足す）
+AREA_CODE_BY_SLUG = {v: k for k, v in AREA_SLUG.items()} | {
+    "aichi-toyohashi": "23201", "shizuoka-shizuoka": "22100", "kochi-kochi": "39201",
+    "miyagi-sendai": "04100", "wakayama-wakayama": "30201", "hokkaido-sapporo": "01100",
+}
+AREA_SIBLINGS = [
+    ('khazard', '土砂災害', 'がけ崩れ・土石流・地すべりの警戒区域（イエロー／レッド）の内か外か'),
+    ('krefuge', '避難所', 'この市区町村の指定避難所と、住所から徒歩何分か'),
+    ('ktsunami', '津波浸水想定', '津波で何メートル浸かる想定か'),
+    ('kriskarea', '災害危険区域', '条例で建築が制限される区域と、その基準'),
+    ('kmorido', '盛土規制区域', '宅地造成・盛土の規制がかかる区域'),
+]
+_AREA_SIB_CACHE = os.path.join(ROOT, 'data', 'sibling_codes.json')
+_area = {'muni': None, 'by_pref': None, 't': 0.0, 'sib': None}
+
+
+def _area_load():
+    """muni_stats を読む（10分キャッシュ。集計を作り直したら再起動しなくても反映される）。"""
+    if _area['muni'] is not None and time.time() - _area['t'] < 600:
+        return _area['muni'], _area['by_pref']
+    out = {}
+    try:
+        with db() as conn, conn.cursor() as cur:
+            cur.execute("""SELECT muni_code, pref_code, pref, muni, shelters, uncovered, inside, by_rank, max_rank, collapse,
+                                  flood_shelters, flood_inside, muni_src, samples, computed_at::date FROM muni_stats""")
+            cols = ('code', 'pref_code', 'pref', 'muni', 'shelters', 'uncovered', 'inside', 'by_rank', 'max_rank', 'collapse',
+                    'flood_shelters', 'flood_inside', 'muni_src', 'samples', 'computed_at')
+            for r in cur.fetchall():
+                d = dict(zip(cols, r))
+                if d['uncovered'] >= d['shelters']:
+                    continue   # 避難場所がすべて国のデータの無い場所（未収録）。言えることが無いのでページを作らない
+                d['judged'] = d['shelters'] - d['uncovered']
+                d['slug'] = AREA_SLUG.get(d['code'], d['code'])
+                d['full'] = d['pref'] + d['muni']
+                d['max_label'] = DEPTH_RANK.get(d['max_rank']) if d['max_rank'] else None
+                d['ranks'] = [(int(k), DEPTH_RANK.get(int(k)), v) for k, v in sorted((d['by_rank'] or {}).items(), key=lambda x: -int(x[0]))]
+                d['computed_at'] = str(d['computed_at'])
+                out[d['code']] = d
+    except Exception as e:  # noqa: BLE001
+        print('muni_stats を読めません（地域ページは出せません）:', e)
+        if _area['muni'] is not None:
+            return _area['muni'], _area['by_pref']
+    by_pref = {}
+    for d in sorted(out.values(), key=lambda x: (-x['inside'], -x['shelters'])):
+        by_pref.setdefault(d['pref_code'], []).append(d)
+    _area.update(muni=out, by_pref=by_pref, t=time.time())
+    return out, by_pref
+
+
+def _area_sibling_codes():
+    """製品ごとに {市区町村コード: そのページのパス部分}。**ページがある市区町村にしかリンクしない。**
+
+    各製品の sitemap.xml から取る（khazard の _load_sibling_codes と同じ）。取れなければ前回の控え。
+    政令市はローマ字のスラッグで載っているので AREA_CODE_BY_SLUG でコードに戻す。1日キャッシュ。
+    """
+    sib = _area['sib']
+    if sib is not None and time.time() - sib[0] < 86400:
+        return sib[1]
+    try:
+        old = json.load(open(_AREA_SIB_CACHE, encoding='utf-8'))
+    except Exception:  # noqa: BLE001
+        old = {}
+    out = {}
+    for key, _, _ in AREA_SIBLINGS:
+        try:
+            r = requests.get(f'https://kurage.exbridge.jp/{key}.php/sitemap.xml', timeout=15,
+                             headers={'User-Agent': 'kflood-sibling-links/1.0'})
+            r.raise_for_status()
+            m = {}
+            for seg in re.findall(r'/area/([0-9a-z-]+)<', r.text):
+                code = seg if re.fullmatch(r'\d{5}', seg) else AREA_CODE_BY_SLUG.get(seg)
+                if code and (code not in m or not re.fullmatch(r'\d{5}', seg)):
+                    m[code] = seg          # スラッグがあればそちらを正とする
+            out[key] = m or old.get(key, {})
+        except Exception:  # noqa: BLE001
+            out[key] = old.get(key, {})
+    try:
+        json.dump(out, open(_AREA_SIB_CACHE, 'w', encoding='utf-8'))
+    except Exception:  # noqa: BLE001
+        pass
+    _area['sib'] = (time.time(), out)
+    return out
+
+
+def _area_jsonld(name, url, faq=None, parent=None):
+    items = [{"@type": "ListItem", "position": 1, "name": SITE, "item": PUBLIC_BASE + "/"},
+             {"@type": "ListItem", "position": 2, "name": "地域一覧", "item": PUBLIC_BASE + "/area/"}]
+    if parent:
+        items.append({"@type": "ListItem", "position": 3, "name": parent[0], "item": parent[1]})
+    if url != PUBLIC_BASE + "/area/":
+        items.append({"@type": "ListItem", "position": len(items) + 1, "name": name, "item": url})
+    graph = [{"@type": "BreadcrumbList", "itemListElement": items}]
+    if faq:
+        graph.append({"@type": "FAQPage", "mainEntity": [
+            {"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in faq]})
+    return json.dumps({"@context": "https://schema.org", "@graph": graph}, ensure_ascii=False)
+
+
+AREA_SRC = {
+    '名古屋市': '名古屋市 洪水ハザードマップ 令和8年度版（名古屋市オープンデータカタログ、CC BY 4.0）',
+    '愛知県': '愛知県 洪水浸水想定区域図（県管理河川・2024年11月と2025年3月の指定。愛知県建設局河川課から提供）',
+}
+
+
+@app.get('/area', response_class=HTMLResponse)
+@app.get('/area/', response_class=HTMLResponse)
+def area_index(request: Request):
+    muni, by_pref = _area_load()
+    if not muni:
+        raise HTTPException(503, '集計を準備中です')
+    prefs = [dict(code=pc, pref=lst[0]['pref'], n=len(lst), hit=sum(1 for x in lst if x['inside']),
+                  shelters=sum(x['shelters'] for x in lst), inside=sum(x['inside'] for x in lst))
+             for pc, lst in sorted(by_pref.items())]
+    tot = dict(n=len(muni), hit=sum(p['hit'] for p in prefs), shelters=sum(p['shelters'] for p in prefs),
+               inside=sum(p['inside'] for p in prefs))
+    url = PUBLIC_BASE + '/area/'
+    return page(request, 'area_index.html', prefs=prefs, tot=tot, canonical=url,
+                jsonld=_area_jsonld('地域一覧', url))
+
+
+@app.get('/area/pref/{pref_code}', response_class=HTMLResponse)
+def area_pref(request: Request, pref_code: str):
+    muni, by_pref = _area_load()
+    lst = by_pref.get(pref_code)
+    if not lst:
+        raise HTTPException(404, 'その都道府県のページはありません')
+    pref = lst[0]['pref']
+    s = dict(n=len(lst), hit=sum(1 for x in lst if x['inside']), shelters=sum(x['shelters'] for x in lst),
+             inside=sum(x['inside'] for x in lst), collapse=sum(x['collapse'] for x in lst),
+             deep=sum(1 for x in lst if x['max_rank'] >= 3))
+    url = f'{PUBLIC_BASE}/area/pref/{pref_code}'
+    return page(request, 'area_pref.html', pref=pref, pref_code=pref_code, lst=lst, s=s, canonical=url,
+                jsonld=_area_jsonld(pref, url))
+
+
+@app.get('/area/{slug}', response_class=HTMLResponse)
+def area_page(request: Request, slug: str):
+    muni, by_pref = _area_load()
+    code = slug if slug in muni else {v: k for k, v in AREA_SLUG.items()}.get(slug)
+    d = muni.get(code) if code else None
+    if not d:
+        raise HTTPException(404, '地域が見つかりません')
+    full, city = d['full'], d['muni']
+    url = f"{PUBLIC_BASE}/area/{d['slug']}"     # 団体コードで来ても、スラッグのある都市はスラッグを正とする
+    sib_codes = _area_sibling_codes()
+    nxt = [dict(key=k, label=lab, desc=desc, seg=sib_codes.get(k, {}).get(code)) for k, lab, desc in AREA_SIBLINGS]
+    nxt = [x for x in nxt if x['seg']]
+    sib = [x for x in by_pref.get(d['pref_code'], []) if x['code'] != code][:40]
+    samples = d['samples'] or []
+    example = samples[0]['address'] if samples else full
+    if d['inside']:
+        faq_a = (f"{full}の指定緊急避難場所{d['shelters']:,}件のうち{d['inside']:,}件が、洪水浸水想定区域（想定最大規模）"
+                 f"または家屋倒壊等氾濫想定区域の中にあります。最大の想定浸水深は{d['max_label'] or '—'}です。"
+                 "住所を入れると、その地点が何メートル・何日浸かる想定かが分かります。")
+    else:
+        faq_a = (f"{full}の指定緊急避難場所{d['shelters']:,}件は、" + (f"国のデータで判定できた{d['judged']:,}件が" if d['uncovered'] else "") + "いずれも洪水浸水想定区域の外にありました。"
+                 "ただし避難場所の位置についての結果で、市内に浸水想定が無いという意味ではありません。住所を入れて確かめてください。")
+    faq = [(f"{full}の洪水ハザードマップ（浸水想定）はどこで調べられますか？",
+            f"このページで{full}の住所を入れると、国の洪水浸水想定区域（国土数値情報）にもとづいて、浸水の深さ・浸水が続く時間・"
+            "家屋倒壊等氾濫想定区域が表示されます。参考情報なので、最終確認は市区町村の公式ハザードマップで行ってください。"),
+           (f"{full}の避難場所は洪水で浸かる想定ですか？", faq_a),
+           ("「区域外」と出れば安全ですか？",
+            "いいえ。洪水浸水想定区域は、国や都道府県が指定した河川の氾濫だけを計算したものです。指定されていない小さな川や水路、"
+            "下水があふれる内水による浸水は含まれません。区域外は「想定が無い」という意味で、安全という意味ではありません。")]
+    return page(request, 'area.html', d=d, full=full, city=city, nxt=nxt, sib=sib, samples=samples, example=example,
+                wm=wagamachi_for(code), jm=jma.status_for(full), src_extra=([AREA_SRC['名古屋市']] if code == '23100' else [AREA_SRC['愛知県']] if d['pref_code'] == '23' else []),
+                nagoya_wards=(nagoya.wards() if code == '23100' else []), dr=DEPTH_RANK, canonical=url,
+                jsonld=_area_jsonld(full, url, faq=faq, parent=(d['pref'], f"{PUBLIC_BASE}/area/pref/{d['pref_code']}")))
+
+
 def _lastmod():
     """サイトマップの lastmod。**このファイルの更新日**を使う。
 
@@ -1473,6 +1657,10 @@ _LASTMOD = _lastmod()
 def sitemap(request: Request):
     base = 'https://kurage.exbridge.jp/kflood.php/'
     urls = ['', 'now', 'juyo', 'history', 'nagoya/', 'map/', 'timeline', 'batch', 'about'] + [f"nagoya/{w['slug']}/" for w in nagoya.wards()] + [f"river/{r['slug']}/" for r in nagoya.rivers()]
+    # 全国の市区町村ページ（地域一覧・都道府県47・市区町村）
+    muni, by_pref = _area_load()
+    if muni:
+        urls += ['area/'] + [f'area/pref/{pc}' for pc in sorted(by_pref)] + [f"area/{muni[c]['slug']}" for c in sorted(muni)]
     body = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + ''.join(f'<url><loc>{base}{u}</loc><lastmod>{_LASTMOD}</lastmod><changefreq>monthly</changefreq></url>' for u in urls) + '</urlset>'
     return PlainTextResponse(body, media_type='application/xml')
 
@@ -1523,6 +1711,7 @@ def llms():
 - マイ・タイムライン（警戒レベル1〜5の行動表を印刷）: {PUBLIC_BASE}/timeline
 - CSV一括判定（拠点・物件をまとめて）: {PUBLIC_BASE}/batch
 - データと設計の説明: {PUBLIC_BASE}/about
+- 全国の市区町村ページ（避難場所のうち何件が洪水浸水想定区域の中か・深さの内訳・公式ハザードマップ）: {PUBLIC_BASE}/area/ （市区町村は {PUBLIC_BASE}/area/<全国地方公共団体コード5桁>、都道府県は /area/pref/<2桁>）
 - API: {PUBLIC_BASE}/api/check?q=<住所>
 
 ## 名古屋市の個別ページ

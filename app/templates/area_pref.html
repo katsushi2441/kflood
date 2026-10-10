@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% set nav = 'area' %}
+{% block badge %}全国の市区町村{% endblock %}
+{% block title %}{{ pref }}のハザードマップ（洪水）｜市区町村別の浸水想定と避難場所 | Kurage{% endblock %}
+{% block desc %}{{ pref }}の{{ s.n }}市区町村の指定緊急避難場所{{ '{:,}'.format(s.shelters) }}件のうち{{ '{:,}'.format(s.inside) }}件が洪水浸水想定区域の中にあります（{{ s.hit }}市区町村）。市区町村を選ぶか住所を入れると、何メートル・何日浸かる想定かが分かります。{% endblock %}
+{% block body %}
+<nav class="src" style="margin-bottom:8px"><a href="{{ root }}">住所で判定</a> › <a href="{{ root }}area/">地域一覧</a> › {{ pref }}</nav>
+<h1>{{ pref }}の洪水ハザードマップ（市区町村一覧）</h1>
+<p class="lead">{{ pref }}の<strong>{{ s.n }}市区町村</strong>にある指定緊急避難場所<strong>{{ '{:,}'.format(s.shelters) }}件</strong>のうち、<strong>{{ '{:,}'.format(s.inside) }}件</strong>が洪水浸水想定区域（想定最大規模）か家屋倒壊等氾濫想定区域の中にあります。避難場所が区域内にある市区町村は<strong>{{ s.hit }}</strong>、想定浸水深3m以上（2階も浸水する深さ）の避難場所がある市区町村は<strong>{{ s.deep }}</strong>です。市区町村ごとの内訳は下の表からどうぞ。</p>
+<div class="panel">
+<form class="search" action="{{ root }}" method="get"><input type="text" name="q" placeholder="例: {{ pref }}の住所（町名まで）" required><button class="btn" type="submit">住所で判定する</button></form>
+</div>
+<div class="panel">
+<div class="tscroll"><table class="t"><tr><th>市区町村</th><th>避難場所</th><th>うち区域内</th><th>最大の想定浸水深</th></tr>
+{% for x in lst %}<tr><td><a href="{{ root }}area/{{ x.slug }}">{{ x.muni }}</a></td><td>{{ '{:,}'.format(x.shelters) }}</td><td>{{ '{:,}'.format(x.inside) }}</td><td>{{ x.max_label or '—' }}</td></tr>{% endfor %}
+</table></div>
+<p class="src" style="margin-top:10px">他の都道府県は <a href="{{ root }}area/">地域一覧</a>、地図で見るなら <a href="{{ root }}map/">地図</a>。{% if pref_code == '23' %}名古屋市は <a href="{{ root }}nagoya/">区・河川のページ</a> もあります。{% endif %}</p>
+</div>
+<p class="src">避難場所の件数は、国土地理院「指定緊急避難場所データ」（CC BY 4.0）の施設の座標に、国土数値情報 洪水浸水想定区域（1次メッシュ単位）A31b {{ a31_vintage or '' }}（国土交通省）を重ねて数えた実測値です{% if pref_code == '23' %}（愛知県内は名古屋市・愛知県のデータと深い方）{% endif %}。市域の面積に対する割合ではありません。<strong>「区域外」は「安全」ではありません。</strong>指定されていない小さな川や水路、内水（下水があふれる浸水）は含まれません。</p>
+{% endblock %}

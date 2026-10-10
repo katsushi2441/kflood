@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% set nav = 'area' %}
+{% block badge %}全国の市区町村{% endblock %}
+{% block title %}{% if d.inside or d.uncovered %}{{ full }}のハザードマップ（洪水）｜浸水想定を住所で判定・避難場所{{ '{:,}'.format(d.shelters) }}件中{{ '{:,}'.format(d.inside) }}件が想定区域内 | Kurage{% else %}{{ full }}のハザードマップ（洪水）｜浸水想定を住所で判定・避難場所{{ '{:,}'.format(d.shelters) }}件はすべて想定区域外 | Kurage{% endif %}{% endblock %}
+{% block desc %}{% if d.inside %}{{ full }}の指定緊急避難場所{{ '{:,}'.format(d.shelters) }}件のうち{{ '{:,}'.format(d.inside) }}件が洪水浸水想定区域の中にあります（最大の想定浸水深 {{ d.max_label or '—' }}{% if d.collapse %}・家屋倒壊等氾濫想定区域内 {{ '{:,}'.format(d.collapse) }}件{% endif %}）。{% else %}{{ full }}の指定緊急避難場所{{ '{:,}'.format(d.shelters) }}件は、{% if d.uncovered %}国のデータで判定できた{{ '{:,}'.format(d.judged) }}件が{% endif %}いずれも洪水浸水想定区域の外でした。{% endif %}住所を入れると、その地点が洪水・内水で何メートル・何日浸かる想定かを表示します。{% endblock %}
+{% block css %}
+.mlist{font-size:14px;line-height:2;columns:2;column-gap:22px}@media(max-width:560px){.mlist{columns:1}}
+.nxgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:10px;margin-top:10px}
+.nx{display:flex;flex-direction:column;gap:4px;border:1px solid #cfe3e0;border-radius:10px;padding:12px 14px;background:#f6fbfa;color:var(--navy);text-decoration:none;min-width:0}
+.nx b{font-size:16px;color:var(--teal-d)}.nx span{font-size:13px;color:var(--muted);line-height:1.6}.nx:hover,.nx:focus-visible{border-color:var(--teal-d);background:#eef8f6}
+table.t td{overflow-wrap:anywhere}
+{% endblock %}
+{% block body %}
+<nav class="src" style="margin-bottom:8px"><a href="{{ root }}">住所で判定</a> › <a href="{{ root }}area/">地域一覧</a> › <a href="{{ root }}area/pref/{{ d.pref_code }}">{{ d.pref }}</a> › {{ city }}</nav>
+<h1>{{ full }}のハザードマップ（洪水・内水）</h1>
+{% if d.inside %}
+<p class="lead">{{ full }}では、指定緊急避難場所<strong>{{ '{:,}'.format(d.shelters) }}件</strong>のうち<strong>{{ '{:,}'.format(d.inside) }}件が洪水浸水想定区域の中</strong>にあります。最大の想定浸水深は<strong>{{ d.max_label or '—' }}</strong>{% if d.collapse %}、<strong>{{ '{:,}'.format(d.collapse) }}件は家屋倒壊等氾濫想定区域</strong>（家が流される・壊れるおそれのある区域）の中{% endif %}です。避難先そのものが浸かる想定かどうかは、どこへ逃げるかを決める材料になります。住所を入れると、その地点の浸水の深さ・浸かる時間・内水の想定が出ます。</p>
+{% else %}
+<p class="lead">{{ full }}の指定緊急避難場所<strong>{{ '{:,}'.format(d.shelters) }}件</strong>は、{% if d.uncovered %}国のデータで判定できた{{ '{:,}'.format(d.judged) }}件が{% endif %}いずれも<strong>洪水浸水想定区域の外</strong>にありました{% if d.uncovered %}（{{ '{:,}'.format(d.uncovered) }}件は国のデータが無い場所にあり、未収録です）{% endif %}。ただしこれは避難場所の位置についての結果で、{{ city }}のどこにも浸水想定が無いという意味ではありません。住所を入れて確かめてください。</p>
+{% endif %}
+<div class="panel">
+<form class="search" action="{{ root }}" method="get">
+<input type="text" name="q" value="{{ example }}" placeholder="例: {{ example }}" autocomplete="street-address" required>
+<button class="btn" type="submit">この住所で判定する</button>
+</form>
+<p class="ex">町名・番地まで入れると、想定最大規模の浸水深・浸水継続時間・家屋倒壊等氾濫想定区域と、立退き避難か上の階で足りるかの目安を返します。</p>
+</div>
+
+<div class="panel" id="next">
+<h2 style="margin-top:0">同じ{{ city }}で、次に確かめること</h2>
+<div class="nxgrid">
+{% if nagoya_wards %}<a class="nx" href="{{ root }}nagoya/"><b>名古屋市の区・河川</b><span>いま出ている避難情報（警戒レベル）を河川別・区別に。区ごとの浸水のおそれ</span></a>{% endif %}
+{% for x in nxt %}<a class="nx" href="/{{ x.key }}.php/area/{{ x.seg }}#ref=kflood-area"><b>{{ x.label }}</b><span>{{ x.desc }}</span></a>{% endfor %}
+<a class="nx" href="{{ root }}now?q={{ full|urlencode }}"><b>いま、どうするか</b><span>警報・避難情報と浸水想定から、立退き避難か上の階かの目安</span></a>
+</div>
+{% if nagoya_wards %}<p class="src" style="margin-top:10px">名古屋市の区ごとのページ: {% for w in nagoya_wards %}<a href="{{ root }}nagoya/{{ w.slug }}/">{{ w.name }}</a>{{ '・' if not loop.last }}{% endfor %}</p>{% endif %}
+</div>
+
+<div class="panel" id="now">
+<h2 style="margin-top:0">いまの気象警報・注意報（気象庁）</h2>
+{% if jm and jm.status in ('ok','stale') %}
+{% if jm.source_outdated %}
+<div class="note">気象庁の配信が {{ jm.report_at[:16]|replace('T',' ') }}（{{ (jm.report_age_h/24)|round(0,'floor')|int }}日前）で止まっているため、<b>いま{{ jm.muni_name or city }}に出ている警報・注意報は分かりません</b>。最後に取れた内容は「{{ jm['items']|map(attribute='name')|join('、') }}」ですが、すでに解除されている可能性が高いので、これを現在の状況として表示しません。<a href="https://www.jma.go.jp/bosai/warning/" target="_blank" rel="noopener">気象庁のページ</a>で最新をご確認ください。</div>
+{% elif jm['items'] %}
+<div class="grid">
+{% for it in jm['items'] %}<div class="card {{ 'lv3' if it.kind in ('special','danger') else 'lv2' if it.kind=='warning' else 'lv1' }}"><div class="k">{{ '特別警報' if it.kind=='special' else '危険警報' if it.kind=='danger' else '警報' if it.kind=='warning' else '注意報' }}</div><div class="v" style="font-size:16px">{{ it.name }}</div></div>{% endfor %}
+</div>
+{% if jm.headline %}<p class="src">{{ jm.headline }}</p>{% endif %}
+{% else %}<div class="card none"><div class="v" style="font-size:17px">現在、{{ jm.muni_name or city }}に気象警報・注意報は発表されていません</div></div>{% endif %}
+<p class="src">{{ jm.fetched_at }} 取得{% if jm.status=='stale' %}（前回取得できた値）{% endif %}／出典: <a href="{{ jm.source_url }}" target="_blank" rel="noopener">{{ jm.source }}</a>{% if jm.report_at %}（{{ jm.report_at[:16]|replace('T',' ') }} 発表）{% endif %}。避難情報は市区町村の発表でご確認ください。<b>出ていないときも、この枠は出しています。</b></p>
+{% else %}<div class="note">気象警報・注意報を取得できませんでした。<b>発表されていないという意味ではありません。</b><a href="https://www.jma.go.jp/bosai/warning/" target="_blank" rel="noopener">気象庁のページ</a>でご確認ください。</div>{% endif %}
+</div>
+
+<div class="panel">
+<h2 style="margin-top:0">{{ city }}の避難場所と洪水浸水想定（実データ）</h2>
+<div class="grid">
+<div class="card"><div class="k">指定緊急避難場所</div><div class="v">{{ '{:,}'.format(d.shelters) }}件</div></div>
+<div class="card {{ 'lv2' if d.inside else 'none' }}"><div class="k">うち洪水浸水想定区域の中</div><div class="v">{{ '{:,}'.format(d.inside) }}件</div></div>
+<div class="card {{ 'lv3' if d.max_rank>=3 else 'lv2' if d.max_rank==2 else 'lv1' if d.max_rank==1 else 'none' }}"><div class="k">最大の想定浸水深（想定最大規模）</div><div class="v" style="font-size:19px">{{ d.max_label or '区域内なし' }}</div></div>
+<div class="card {{ 'lv3' if d.collapse else 'none' }}"><div class="k">家屋倒壊等氾濫想定区域の中</div><div class="v">{{ '{:,}'.format(d.collapse) }}件</div></div>
+</div>
+{% if d.ranks %}
+<h2>想定浸水深ごとの避難場所の数</h2>
+<div class="tscroll"><table class="t"><tr><th>想定浸水深（想定最大規模）</th><th>避難場所</th></tr>
+{% for r, label, n in d.ranks %}<tr><td>{{ label }}{% if r>=3 %}（2階も浸水する深さ）{% endif %}</td><td>{{ '{:,}'.format(n) }}件</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+<p class="src">洪水の指定がある避難場所は{{ '{:,}'.format(d.flood_shelters) }}件で、このうち{{ '{:,}'.format(d.flood_inside) }}件が浸水想定区域の中にあります（上の階に逃げる前提で指定されている建物があるため、区域内でも洪水の指定が付くことがあります）。{% if d.uncovered %}国のデータ（1次メッシュ）が無い場所にある{{ '{:,}'.format(d.uncovered) }}件は「未収録」で、区域外には数えていません。{% endif %}</p>
+{% if samples %}
+<h2>浸水想定区域の中にある避難場所の例</h2>
+<div class="tscroll"><table class="t"><tr><th>施設名</th><th>所在</th><th>想定浸水深</th><th>洪水の指定</th></tr>
+{% for s in samples %}<tr><td>{{ s.name }}</td><td>{{ s.address }}</td><td>{{ dr.get(s.rank, '—') if s.rank else '—' }}{% if s.collapse %}<br><span class="badge red">家屋倒壊等</span>{% endif %}</td><td>{{ 'あり' if s.flood_ok else 'なし' }}</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+<p class="src">避難場所の位置に、国の洪水浸水想定区域（想定最大規模）と家屋倒壊等氾濫想定区域を重ねて数えた実測値です。<b>{{ city }}の面積の何%が浸かるかではありません。</b>{% if src_extra %}{{ city }}は、国のデータに加えて{{ src_extra|join('・') }}でも引き、深い方で数えています（判定画面と同じ考え方）。{% endif %}集計日 {{ d.computed_at }}。</p>
+</div>
+
+{% if wm and (wm.links or wm.contact) %}
+<div class="panel">
+<h2 style="margin-top:0">{{ city }}の公式ハザードマップ</h2>
+<p>このページの判定は国のデータにもとづく<strong>参考情報</strong>です。正式なものは市区町村が作るハザードマップなので、最終確認はこちらでお願いします。</p>
+{% if wm.links %}<ul style="font-size:14.5px;line-height:1.8">
+{% for l in wm.links %}<li><a href="{{ l.url }}" target="_blank" rel="noopener">{{ city }}の{{ l.kind }}ハザードマップ（{{ city }}公式）</a><br><span class="src">担当: {{ l.dept or '—' }}{% if l.tel %} ／ {{ l.tel }}{% endif %}</span></li>{% endfor %}
+</ul>
+{% else %}<p class="src">公開ページのリンクが変わっているため、窓口をご案内します。担当: {{ wm.contact.dept or '—' }}{% if wm.contact.tel %} ／ {{ wm.contact.tel }}{% endif %}</p>{% endif %}
+<p class="src">出典: わがまちハザードマップ（ハザードマップポータルサイト・国土交通省）{% if wm.fetched %}・{{ wm.fetched }}時点{% endif %}。リンク先の著作権は各市区町村にあり、最新版でない場合があります。</p>
+</div>
+{% endif %}
+
+<div class="panel">
+<h2 style="margin-top:0">市区町村のハザードマップとの使い分け</h2>
+<div class="tscroll"><table class="t">
+<tr><th></th><th>{{ city }}の公式ハザードマップ</th><th>このページ</th></tr>
+<tr><th>調べ方</th><td>地図の中から自分の場所を目で探す</td><td>住所を入れると1件で判定</td></tr>
+<tr><th>形</th><td>地図（多くはPDF）</td><td>Webページ（文字で読める・読み上げできる）</td></tr>
+<tr><th>洪水と内水</th><td>別々の図のことが多い</td><td>同じ住所で両方を照らす（内水は収録地域のみ）</td></tr>
+<tr><th>位置づけ</th><td><strong>正式</strong></td><td>参考情報（出典と時点を明記）</td></tr>
+</table></div>
+<p class="src">引っ越し先や実家など、別の市区町村も同じ使い方で調べられます。不動産取引の重要事項説明には、市区町村の正式なハザードマップを使ってください。</p>
+</div>
+
+<div class="panel">
+<h2 style="margin-top:0">検索でよく使われる言い方と、行政の用語</h2>
+<div class="tscroll"><table class="t"><tr><th>ふだんの言い方</th><th>法令・行政の用語</th></tr>
+{% for a, b in wm.terms %}<tr><td>{{ a }}</td><td>{{ b }}</td></tr>{% endfor %}
+</table></div>
+</div>
+
+{% if sib %}
+<div class="panel">
+<h2 style="margin-top:0">{{ d.pref }}の他の市区町村</h2>
+<div class="mlist">{% for x in sib %}<a href="{{ root }}area/{{ x.slug }}">{{ x.muni }}</a>（避難場所{{ '{:,}'.format(x.shelters) }}件中{{ '{:,}'.format(x.inside) }}件が区域内）<br>{% endfor %}</div>
+<p class="src" style="margin-top:8px"><a href="{{ root }}area/pref/{{ d.pref_code }}">{{ d.pref }}の全市区町村一覧</a>・<a href="{{ root }}area/">全国の地域一覧</a></p>
+</div>
+{% endif %}
+
+<!--kurage-only--><div class="panel">
+<h2 style="margin-top:0">同じ仕組みを、自分のところで動かす</h2>
+<p>{{ full }}を含む全国の洪水浸水想定（国土数値情報）で住所を判定するこの画面を、事務所・自治体・会社の名前で公開できます。ソースコード同梱・MITライセンス・月額なし。</p>
+<p><a class="btn" href="{{ links.buy }}-area" target="_blank" rel="noopener">オンプレミス版を見る（税込55,000円）</a></p>
+<p class="src">名古屋市内の会社なら、<a href="https://exbridge.jp/ai-it-komon.html?ref=kflood-area" target="_blank" rel="noopener">AI-IT顧問契約</a>（月15時間・税別150,000円）の期間中に構築できる商品は、商品代金をいただかず当社が設置まで行います。</p>
+</div><!--/kurage-only-->
+
+<p class="src"><strong>「区域外」は「安全」ではありません。</strong>洪水浸水想定区域は、国や都道府県が指定した河川（洪水予報河川・水位周知河川ほか）の氾濫を計算したもので、指定されていない小さな川や水路、下水があふれる内水による浸水は含まれません。想定は前提を置いた計算で、実際の浸水がこのとおりになると決まっているわけでもありません。
+出典: 国土数値情報 洪水浸水想定区域（1次メッシュ単位）A31b {{ a31_vintage or '' }}（国土交通省）を加工して作成{% if src_extra %}、{{ src_extra|join('、') }}{% endif %}、国土地理院「指定緊急避難場所データ」（CC BY 4.0）を加工して作成。避難場所の市区町村は住所から判定しています。</p>
+{% endblock %}

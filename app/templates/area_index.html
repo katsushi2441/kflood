@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% set nav = 'area' %}
+{% block badge %}全国の市区町村{% endblock %}
+{% block title %}全国の洪水ハザードマップ｜都道府県・市区町村別の浸水想定と避難場所 | Kurage{% endblock %}
+{% block desc %}全国{{ '{:,}'.format(tot.n) }}市区町村の指定緊急避難場所{{ '{:,}'.format(tot.shelters) }}件に、国の洪水浸水想定区域を重ねました。{{ '{:,}'.format(tot.inside) }}件が区域内（{{ '{:,}'.format(tot.hit) }}市区町村）。都道府県から市区町村を選ぶと、浸水の深さごとの内訳と公式ハザードマップへのリンクが分かります。{% endblock %}
+{% block body %}
+<nav class="src" style="margin-bottom:8px"><a href="{{ root }}">住所で判定</a> › 地域一覧</nav>
+<h1>市区町村から洪水の浸水想定を調べる</h1>
+<p class="lead">全国<strong>{{ '{:,}'.format(tot.n) }}市区町村</strong>の指定緊急避難場所<strong>{{ '{:,}'.format(tot.shelters) }}件</strong>に、国の洪水浸水想定区域（想定最大規模）と家屋倒壊等氾濫想定区域を重ねました。<strong>{{ '{:,}'.format(tot.inside) }}件</strong>が区域の中にあります。都道府県を選ぶと市区町村ごとの内訳が出ます。住所で直接調べるなら <a href="{{ root }}">住所で判定</a>、地図で見るなら <a href="{{ root }}map/">地図</a> をどうぞ。</p>
+<div class="panel">
+<div class="tscroll"><table class="t"><tr><th>都道府県</th><th>市区町村</th><th>避難場所</th><th>うち区域内</th></tr>
+{% for p in prefs %}<tr><td><a href="{{ root }}area/pref/{{ p.code }}">{{ p.pref }}</a></td><td>{{ p.n }}</td><td>{{ '{:,}'.format(p.shelters) }}</td><td>{{ '{:,}'.format(p.inside) }}</td></tr>{% endfor %}
+</table></div>
+</div>
+<p class="src">出典: 国土数値情報 洪水浸水想定区域（1次メッシュ単位）A31b {{ a31_vintage or '' }}（国土交通省）、国土地理院「指定緊急避難場所データ」（CC BY 4.0）を加工して作成。愛知県内は名古屋市・愛知県のデータとも重ね、深い方で数えています。件数は施設の座標を重ねた実測値で、面積の割合ではありません。<strong>「区域外」は「安全」ではありません。</strong></p>
+{% endblock %}
