@@ -60,5 +60,28 @@ if (stripos((string)$status . implode('', headers_list()), 'text/html') !== fals
     // 再販パートナー募集の枠（中身は kurage_web/partner-bar.js。kurage.exbridge.jp 以外では何も出さない）
     $tag .= '<script src="https://kurage.exbridge.jp/partner-bar.js" defer></script>';
     $body = str_replace('</head>', $tag . '</head>', $body);
+    // 「エクスブリッジについて」の欄（正本 kurage_web/exbridge-about.html の写し・文言は正本で直す）。
+    // 当社の公開先（kurage.exbridge.jp・proto.exbridge.jp・exbridge.jp）で動いているときだけ、既存フッターの直前に出す。
+    // お客さまが自社のドメインに置いたときは出さない。
+    $__host = strtolower(preg_replace('/:\d+$/', '', isset($_SERVER['HTTP_HOST']) ? (string)$_SERVER['HTTP_HOST'] : ''));
+    if (in_array($__host, array('kurage.exbridge.jp', 'proto.exbridge.jp', 'exbridge.jp'), true) && ($__fp = strpos($body, '<footer')) !== false) {
+        $__about = <<<'EXB_ABOUT'
+<section class="exb-about" style="max-width:1080px;margin:32px auto 0;padding:18px 16px 8px;border-top:1px solid #d6dde3;font-size:13.5px;line-height:1.75;color:#33414d;background:transparent;box-sizing:border-box;text-align:left">
+  <h2 style="font-size:15px;line-height:1.5;margin:0 0 6px;color:#1f2d38;font-weight:700">エクスブリッジについて</h2>
+  <p style="margin:0 0 8px">このページは、名古屋のシステム開発会社・株式会社エクスブリッジが運営しています。AIを使って中小企業の業務システムを作り、保守契約・月額のシステム利用料・要件定義なしで使える買い切りの業務システムを <a href="https://kappstore.exbridge.jp/#ref=exb-about-kflood">Kurage App Store</a> で販売しています。</p>
+  <dl style="display:grid;grid-template-columns:auto 1fr;gap:2px 12px;margin:0 0 8px">
+    <dt style="font-weight:700">会社名</dt><dd style="margin:0">株式会社エクスブリッジ（EXBRIDGE, Inc.）</dd>
+    <dt style="font-weight:700">所在地</dt><dd style="margin:0">愛知県名古屋市瑞穂区内浜町34-9 305</dd>
+    <dt style="font-weight:700">設立</dt><dd style="margin:0">2004年4月</dd>
+    <dt style="font-weight:700">資本金</dt><dd style="margin:0">1億250万円</dd>
+    <dt style="font-weight:700">代表取締役</dt><dd style="margin:0">小嶋 篤</dd>
+    <dt style="font-weight:700">法人番号</dt><dd style="margin:0">4180001056508</dd>
+    <dt style="font-weight:700">事業</dt><dd style="margin:0">AIを使った業務システムの開発、Kurage App Store の運営、AI-IT顧問</dd>
+  </dl>
+  <p style="margin:0"><a href="https://exbridge.jp/profile.html#ref=exb-about-kflood">会社概要</a>　<a href="https://exbridge.jp/vibeblog/2026-11-03-exbridge-yameta-3tsu-hoshu-getsugaku-youken.html#ref=exb-about-kflood">エクスブリッジがやめた3つ</a>　<a href="https://exbridge.jp/ai-it-komon.html#ref=exb-about-kflood">AI-IT顧問</a>　<a href="https://exbridge.jp/contact.php#ref=exb-about-kflood">お問い合わせ</a></p>
+</section>
+EXB_ABOUT;
+        $body = substr_replace($body, $__about . "\n", $__fp, 0);
+    }
 }
 echo $body;
