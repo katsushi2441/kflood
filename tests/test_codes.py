@@ -55,5 +55,15 @@ def test_timeline_policy():
 def test_timeline_household_rows():
     tl = build_timeline(_res(max_rank=2, dur=1), {'elderly': 1, 'car': 1, 'pet': 1, 'upper_floor': 1})
     assert any('要配慮者' in a for a in tl['rows'][0]) and any('ガソリン' in a for a in tl['rows'][0]) and any('ペット' in a for a in tl['rows'][0])
-    assert any('警戒レベル3' in a and '避難を開始' in a for a in tl['rows'][1])
-    assert len(tl['rows']) == 4 and len(tl['levels']) == 4
+    # 行は国交省マイ・タイムラインの5段階（3日前→前日→半日前→氾濫5〜3時間前→発災）＝警戒レベル1〜5（c392005）
+    assert [lv[1] for lv in tl['levels']] == ['警戒レベル1', '警戒レベル2', '警戒レベル3', '警戒レベル4', '警戒レベル5']
+    assert len(tl['rows']) == len(tl['levels']) == 5
+    assert any('警戒レベル3' in a and '避難を開始' in a for a in tl['rows'][2])
+    assert any('警戒レベル4' in a for a in tl['rows'][3]) and any('警戒レベル5' in a for a in tl['rows'][4])
+
+
+def test_timeline_refuge_goes_to_level3_row():
+    # 避難先の候補は「避難に時間がかかる人はここで出発」の警戒レベル3の行に出す
+    sib = {'refuge': {'items': [{'name': 'テスト小学校', 'walk_minutes': 7, 'address': '某所'}]}}
+    tl = build_timeline(_res(max_rank=2, dur=1), {}, sib)
+    assert any('テスト小学校' in a and '徒歩約7分' in a for a in tl['rows'][2])

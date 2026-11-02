@@ -70,7 +70,34 @@ def test_city_fills_gap_where_national_data_is_outside():
 
 @pytest.mark.skipif(not _db_ready(), reason='名古屋市の洪水データが取り込まれていない')
 def test_outside_city_is_untouched():
-    """市外（豊明市）では市のデータを使わない。"""
+    """市外（豊明市）では名古屋市のデータを使わない。
+
+    2026-10-09（e808d4c）から、名古屋市外の愛知県は県の洪水浸水想定区域図で国の判定を補う。
+    そのため national['city'] は出るが、area は「愛知県」で、名古屋市の図（nagoya_flood_*）は使わない。
+    """
     from app.main import check_point
     res = check_point(137.0120, 35.0540, '愛知県豊明市')
-    assert 'city' not in res['national']
+    city = res['national'].get('city')
+    assert city is None or city['area'] == '愛知県'
+    assert not any(d['key'].startswith('nagoya_flood_') for d in res['datasets'])
+
+
+@pytest.mark.skipif(not _db_ready(), reason='名古屋市の洪水データが取り込まれていない')
+def test_naisui_outside_city_is_uncovered_not_outside():
+    """名古屋市の内水の収録範囲は外接矩形で豊明市に掛かる。市域の外を「名古屋市の内水では浸水想定なし」と言わない。"""
+    from app.main import check_point
+    for title in ('愛知県豊明市', '', '地図で指定した地点（35.05400, 137.01200）'):
+        nai = check_point(137.0120, 35.0540, title)['naisui']
+        assert nai['status'] == 'uncovered' and nai['area'] is None, title
+    # 市内で面が当たらない地点は、これまでどおり「名古屋市のデータで浸水想定なし」
+    for title in ('愛知県名古屋市中区', ''):
+        nai = check_point(136.8997, 35.1856, title)['naisui']
+        assert nai['status'] == 'outside' and nai['area'] == '名古屋市', title
+
+
+@pytest.mark.skipif(not _db_ready(), reason='名古屋市の洪水データが取り込まれていない')
+def test_naisui_town_with_gun_in_address():
+    """地理院の住所は郡を挟む（愛知県西春日井郡豊山町）。それでも豊山町のデータで判定する。"""
+    from app.main import check_point
+    nai = check_point(136.912, 35.25, '愛知県西春日井郡豊山町')['naisui']
+    assert nai['area'] == '愛知県豊山町'

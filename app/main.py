@@ -357,7 +357,14 @@ def check_point(lon, lat, title=''):
         # （2026-09-20 実測）。**候補を全部集めて、実際に面が当たったものを採る。**
         cur.execute(f'SELECT area FROM naisui_coverage WHERE ST_Contains(geom, {pt})', (lon, lat))
         cands = [r[0] for r in cur.fetchall()]
-        by_name = [a for a, _ in cov if a and a in (title or '')]
+        def _named(a):
+            # 住所の文字列にその自治体名が出てくるか。地理院の住所は郡を挟む（「愛知県西春日井郡豊山町」）ので、
+            # 都道府県を外した名前でも見る。「千葉県（重ねるハザードマップ掲載分）」の括弧は外す
+            name = re.sub(r'（.*?）', '', a or '')
+            local = PREF_RE.sub('', name)
+            return bool(name) and (name in (title or '') or bool(local and local in (title or '')))
+
+        by_name = [a for a, _ in cov if _named(a)]
         # 住所の文字列に名前が出てくるものを先に見る（豊山町のように市域に食い込む町を正しく選ぶ）
         order = [a for a in by_name if a in cands] + [a for a in cands if a not in by_name] + \
                 [a for a in by_name if a not in cands]
@@ -371,6 +378,30 @@ def check_point(lon, lat, title=''):
                     'FROM naisui_points WHERE area=%s AND geom && ST_Expand(PT, 0.0004) '
                     'ORDER BY geom <-> PT LIMIT 1').replace('PT', pt)
         hit_key = None
+
+        def _may_say_outside(cand):
+            """面が当たらなかった候補を「その自治体のデータで浸水想定なし」と言ってよいか。
+
+            **収録範囲の多くは外接矩形で、矩形の中にも市域の外がある**（名古屋市の矩形は豊明市・日進市・
+            東海市などに掛かる）。市域の外を「名古屋市の内水氾濫ハザードマップでは浸水想定なし」と出すと、
+            未収録を区域外と言うことになる（2026-11-03 豊明市で実測）。
+              1. 住所の文字列にその自治体名がある → よい
+              2. 市域の境界を持っている自治体（名古屋市＝学区の和）→ 座標が市域の中のときだけ
+              3. 住所の文字列が無い（地図のクリック）→ 従来どおり矩形で判断する
+              4. 住所の文字列が別の自治体 → だめ（未収録にする）
+            """
+            t = title or ''
+            if _named(cand):
+                return True
+            cur.execute("SELECT to_regclass('muni_flood_coverage') IS NOT NULL")
+            b = None
+            if cur.fetchone()[0]:   # 洪水の自治体版を取り込んでいない環境もある
+                cur.execute(f'SELECT ST_Contains(geom, {pt}) FROM muni_flood_coverage WHERE area=%s', (lon, lat, cand))
+                b = cur.fetchone()
+            if b is not None:
+                return bool(b[0])
+            return not t or t.startswith('地図で指定した地点')
+
         for cand in order:
             cur.execute(f'SELECT max(depth_m) FROM naisui_depth WHERE area=%s AND ST_Contains(geom, {pt})', (cand, lon, lat))
             dd = cur.fetchone()[0]
@@ -382,7 +413,7 @@ def check_point(lon, lat, title=''):
                 prow = cur.fetchone()
                 if prow and prow[2] is not None and prow[2] <= 20.0:
                     dd, gg, hit_key = prow[0], prow[1], prow[3]
-            if area is None:
+            if area is None and (dd is not None or _may_say_outside(cand)):
                 area, d, m, ground = cand, dd, mm, gg   # どれも当たらなければ先頭を「範囲内だが浸水想定外」に使う
             if dd is not None:
                 area, d, m, ground = cand, dd, mm, gg   # 当たったものを優先
